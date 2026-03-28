@@ -9,64 +9,51 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var viewModel = MainViewModel()
-    @State private var showingShortcutsFilePicker = false
-    @State private var showingOutputDirectoryPicker = false
+    @State private var showingSettings = false
     
     var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            headerView
-            
-            Divider()
-            
-            // Main content
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    // Shortcuts.vdf selection
-                    shortcutsFileSection
-                    
-                    Divider()
-                    
-                    // Output directory selection
-                    outputDirectorySection
-                    
-                    Divider()
-                    
-                    // Shortcut list (placeholder)
-                    shortcutListSection
-                    
-                    Divider()
-                    
-                    // Settings panel
-                    settingsSection
-                    
-                    Divider()
-                    
-                    // Progress view (placeholder)
-                    progressSection
+        ZStack(alignment: .bottomTrailing) {
+            VStack(spacing: 0) {
+                // Header
+                headerView
+                
+                Divider()
+                
+                // Main content
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        // Shortcut list
+                        shortcutListSection
+                        
+                        Divider()
+                        
+                        // Progress view
+                        progressSection
+                    }
+                    .padding()
                 }
-                .padding()
+                
+                // Error message
+                if let errorMessage = viewModel.errorMessage {
+                    errorView(message: errorMessage)
+                }
             }
             
-            // Error message
-            if let errorMessage = viewModel.errorMessage {
-                errorView(message: errorMessage)
+            // Settings button in bottom right corner
+            Button(action: {
+                showingSettings = true
+            }) {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 16))
+                    .foregroundColor(.gray)
             }
+            .buttonStyle(.plain)
+            .padding(16)
         }
-        .frame(minWidth: 700, minHeight: 500)
-        .fileImporter(
-            isPresented: $showingShortcutsFilePicker,
-            allowedContentTypes: [.data],
-            allowsMultipleSelection: false
-        ) { result in
-            handleShortcutsFileSelection(result)
-        }
-        .fileImporter(
-            isPresented: $showingOutputDirectoryPicker,
-            allowedContentTypes: [.folder],
-            allowsMultipleSelection: false
-        ) { result in
-            handleOutputDirectorySelection(result)
+        .frame(minWidth: 500, maxWidth: .infinity)
+        .fixedSize(horizontal: false, vertical: true)
+        .sheet(isPresented: $showingSettings) {
+            SettingsView(viewModel: viewModel)
         }
         .alert("Conversion Complete", isPresented: $viewModel.showingSummary) {
             Button("Done") {
@@ -91,91 +78,6 @@ struct ContentView: View {
                 .foregroundColor(.secondary)
         }
         .padding()
-    }
-    
-    // MARK: - Shortcuts File Section
-    
-    private var shortcutsFileSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Shortcuts File")
-                .font(.headline)
-            
-            Text("Select your Steam shortcuts.vdf file")
-                .font(.caption)
-                .foregroundColor(.secondary)
-            
-            HStack {
-                TextField("Path to shortcuts.vdf", text: $viewModel.shortcutsVDFPath)
-                    .textFieldStyle(.roundedBorder)
-                    .disabled(true)
-                
-                Button("Browse...") {
-                    showingShortcutsFilePicker = true
-                }
-                
-                Button("Auto-Detect") {
-                    viewModel.autoDetectShortcutsFile()
-                }
-            }
-            
-            // Show auto-detected paths if available
-            if !viewModel.autoDetectedPaths.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Auto-detected files:")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    ForEach(viewModel.autoDetectedPaths, id: \.self) { path in
-                        HStack {
-                            Text(path)
-                                .font(.caption)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            
-                            Spacer()
-                            
-                            if viewModel.shortcutsVDFPath == path {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                            } else {
-                                Button("Use") {
-                                    viewModel.shortcutsVDFPath = path
-                                    viewModel.saveConfiguration()
-                                }
-                                .buttonStyle(.borderless)
-                            }
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.secondary.opacity(0.1))
-                        .cornerRadius(4)
-                    }
-                }
-            }
-        }
-    }
-    
-    // MARK: - Output Directory Section
-    
-    private var outputDirectorySection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Output Directory")
-                .font(.headline)
-            
-            Text("Choose where to save the generated app bundles")
-                .font(.caption)
-                .foregroundColor(.secondary)
-            
-            HStack {
-                TextField("Output directory path", text: $viewModel.outputDirectory)
-                    .textFieldStyle(.roundedBorder)
-                    .disabled(true)
-                
-                Button("Choose...") {
-                    showingOutputDirectoryPicker = true
-                }
-            }
-        }
     }
     
     // MARK: - Shortcut List Section
@@ -215,31 +117,8 @@ struct ContentView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                     
-                    // Shortcut list with headers
+                    // Shortcut list
                     VStack(spacing: 0) {
-                        // Header row
-                        HStack(spacing: 12) {
-                            Text("")
-                                .frame(width: 20)
-                            Text("")
-                                .frame(width: 40)
-                            Text("Name")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Text("Emulator")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.secondary)
-                                .frame(width: 100, alignment: .leading)
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                        .background(Color.secondary.opacity(0.1))
-                        
-                        Divider()
-                        
                         // Scrollable list
                         ScrollView {
                             LazyVStack(spacing: 2) {
@@ -250,73 +129,26 @@ struct ContentView: View {
                                         isSelected: Binding(
                                             get: { viewModel.isSelected(shortcut) },
                                             set: { _ in viewModel.toggleSelection(for: shortcut) }
-                                        )
+                                        ),
+                                        displayName: viewModel.getDisplayName(for: shortcut),
+                                        hasCustomName: viewModel.hasCustomName(for: shortcut),
+                                        onRename: { newName in
+                                            viewModel.setCustomName(newName, for: shortcut)
+                                        },
+                                        onResetName: {
+                                            viewModel.resetCustomName(for: shortcut)
+                                        }
                                     )
                                 }
                             }
                             .padding(.vertical, 4)
                         }
-                        .frame(maxHeight: 300)
+                        .frame(minHeight: 100, maxHeight: 500)
                     }
                     .background(Color.secondary.opacity(0.05))
                     .cornerRadius(8)
                 }
             }
-        }
-    }
-    
-    // MARK: - Settings Section
-    
-    private var settingsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Settings")
-                .font(.headline)
-            
-            VStack(alignment: .leading, spacing: 16) {
-                // Remove orphaned bundles checkbox
-                Toggle("Remove orphaned bundles", isOn: $viewModel.removeOrphanedBundles)
-                    .onChange(of: viewModel.removeOrphanedBundles) { _ in
-                        viewModel.saveConfiguration()
-                    }
-                
-                Text("When enabled, app bundles for shortcuts that no longer exist will be deleted during conversion.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.leading, 20)
-                
-                Divider()
-                
-                // Last conversion date
-                HStack {
-                    Text("Last Conversion:")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    
-                    if let lastDate = viewModel.lastConversionDate {
-                        Text(lastDate, style: .date)
-                            .font(.subheadline)
-                        Text(lastDate, style: .time)
-                            .font(.subheadline)
-                    } else {
-                        Text("Never")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
-                Divider()
-                
-                // Reset configuration button
-                Button(role: .destructive) {
-                    viewModel.resetConfiguration()
-                } label: {
-                    Label("Reset Configuration", systemImage: "arrow.counterclockwise")
-                }
-                .buttonStyle(.bordered)
-            }
-            .padding()
-            .background(Color.secondary.opacity(0.05))
-            .cornerRadius(8)
         }
     }
     
@@ -356,9 +188,47 @@ struct ContentView: View {
                 }
             } else {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Ready to convert \(viewModel.selectedShortcutIDs.count) shortcut\(viewModel.selectedShortcutIDs.count == 1 ? "" : "s")")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    // Show helpful message if button is disabled
+                    if !viewModel.canProceed || viewModel.selectedShortcutIDs.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            if viewModel.shortcutsVDFPath.isEmpty {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "exclamationmark.circle.fill")
+                                        .foregroundColor(.orange)
+                                    Text("Select a shortcuts.vdf file in Settings")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            
+                            if viewModel.outputDirectory.isEmpty {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "exclamationmark.circle.fill")
+                                        .foregroundColor(.orange)
+                                    Text("Choose an output directory in Settings")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            
+                            if viewModel.selectedShortcutIDs.isEmpty && !viewModel.shortcuts.isEmpty {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "exclamationmark.circle.fill")
+                                        .foregroundColor(.orange)
+                                    Text("Select at least one shortcut to convert")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                        .padding(12)
+                        .background(Color.orange.opacity(0.1))
+                        .cornerRadius(8)
+                    } else {
+                        Text("Ready to convert \(viewModel.selectedShortcutIDs.count) shortcut\(viewModel.selectedShortcutIDs.count == 1 ? "" : "s")")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                     
                     Button("Convert") {
                         viewModel.startConversion()
@@ -397,8 +267,6 @@ struct ContentView: View {
         .padding()
         .background(Color.orange.opacity(0.1))
     }
-    
-    // MARK: - File Selection Handlers
     
     private func summaryMessage(for summary: ConversionSummary) -> Text {
         var message = ""
@@ -440,28 +308,6 @@ struct ContentView: View {
         }
         
         return Text(message)
-    }
-    
-    private func handleShortcutsFileSelection(_ result: Result<[URL], Error>) {
-        switch result {
-        case .success(let urls):
-            if let url = urls.first {
-                viewModel.selectShortcutsFile(url: url)
-            }
-        case .failure(let error):
-            viewModel.errorMessage = "Failed to select file: \(error.localizedDescription)"
-        }
-    }
-    
-    private func handleOutputDirectorySelection(_ result: Result<[URL], Error>) {
-        switch result {
-        case .success(let urls):
-            if let url = urls.first {
-                viewModel.selectOutputDirectory(url: url)
-            }
-        case .failure(let error):
-            viewModel.errorMessage = "Failed to select directory: \(error.localizedDescription)"
-        }
     }
 }
 

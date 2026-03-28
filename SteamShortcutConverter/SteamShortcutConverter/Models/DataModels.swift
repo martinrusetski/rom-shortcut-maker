@@ -124,19 +124,22 @@ struct AppConfiguration: Equatable, Codable {
     var selectedShortcutIDs: Set<UInt32>
     var removeOrphanedBundles: Bool
     var lastConversionDate: Date?
+    var customNames: [UInt32: String]
     
     init(
         shortcutsVDFPath: String? = nil,
         outputDirectory: String? = nil,
         selectedShortcutIDs: Set<UInt32> = [],
         removeOrphanedBundles: Bool = false,
-        lastConversionDate: Date? = nil
+        lastConversionDate: Date? = nil,
+        customNames: [UInt32: String] = [:]
     ) {
         self.shortcutsVDFPath = shortcutsVDFPath
         self.outputDirectory = outputDirectory
         self.selectedShortcutIDs = selectedShortcutIDs
         self.removeOrphanedBundles = removeOrphanedBundles
         self.lastConversionDate = lastConversionDate
+        self.customNames = customNames
     }
     
     static var `default`: AppConfiguration {

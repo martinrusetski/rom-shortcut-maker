@@ -28,6 +28,7 @@ class MainViewModel: ObservableObject {
     @Published var showingSummary: Bool = false
     @Published var removeOrphanedBundles: Bool = false
     @Published var lastConversionDate: Date?
+    @Published var customNames: [UInt32: String] = [:]
     
     var remainingCount: Int {
         totalCount - processedCount
@@ -54,7 +55,8 @@ class MainViewModel: ObservableObject {
         }
         
         loadConfiguration()
-        autoDetectShortcutsFile()
+        // Removed immediate autoDetectShortcutsFile() to avoid race condition
+        // It will be called inside loadConfiguration() if no path is found
     }
     
     // MARK: - Configuration
@@ -64,20 +66,33 @@ class MainViewModel: ObservableObject {
             do {
                 let config = try await configurationManager.loadConfiguration()
                 await MainActor.run {
-                    if let vdfPath = config.shortcutsVDFPath {
-                        shortcutsVDFPath = vdfPath
-                        // Load shortcuts if path is valid
-                        loadShortcuts()
-                    }
+                    // Apply output directory first as it's independent
                     if let outputDir = config.outputDirectory {
                         outputDirectory = outputDir
                     }
-                    selectedShortcutIDs = config.selectedShortcutIDs
+                    
+                    // Apply persistence-related settings
                     removeOrphanedBundles = config.removeOrphanedBundles
                     lastConversionDate = config.lastConversionDate
+                    customNames = config.customNames
+                    selectedShortcutIDs = config.selectedShortcutIDs
+                    
+                    // Finally, load shortcuts if path is valid
+                    if let vdfPath = config.shortcutsVDFPath {
+                        shortcutsVDFPath = vdfPath
+                        // Load shortcuts WITHOUT resetting selection
+                        loadShortcuts(forceAutoSelect: false)
+                    } else {
+                        // If no path was loaded, try auto-detect now
+                        autoDetectShortcutsFile()
+                    }
                 }
             } catch {
                 print("Failed to load configuration: \(error)")
+                await MainActor.run {
+                    // Try auto-detect if loading failed or file doesn't exist
+                    autoDetectShortcutsFile()
+                }
             }
         }
     }
@@ -86,12 +101,16 @@ class MainViewModel: ObservableObject {
         var config = AppConfiguration.default
         config.shortcutsVDFPath = shortcutsVDFPath.isEmpty ? nil : shortcutsVDFPath
         config.outputDirectory = outputDirectory.isEmpty ? nil : outputDirectory
+        config.selectedShortcutIDs = selectedShortcutIDs
         config.removeOrphanedBundles = removeOrphanedBundles
         config.lastConversionDate = lastConversionDate
+        config.customNames = customNames
         
+        // Use the configuration manager to save
         Task {
             do {
                 try await configurationManager.saveConfiguration(config)
+                print("[CONFIG] Saved configuration successfully")
             } catch {
                 print("Failed to save configuration: \(error)")
             }
@@ -104,6 +123,7 @@ class MainViewModel: ObservableObject {
         selectedShortcutIDs.removeAll()
         removeOrphanedBundles = false
         lastConversionDate = nil
+        customNames.removeAll()
         
         Task {
             do {
@@ -129,6 +149,7 @@ class MainViewModel: ObservableObject {
         if autoDetectedPaths.count == 1 && shortcutsVDFPath.isEmpty {
             shortcutsVDFPath = autoDetectedPaths[0]
             saveConfiguration()
+            loadShortcuts(forceAutoSelect: true)
         }
     }
     
@@ -139,7 +160,7 @@ class MainViewModel: ObservableObject {
             try fileLocationManager.validateManualSelection(at: url.path)
             shortcutsVDFPath = url.path
             saveConfiguration()
-            loadShortcuts()
+            loadShortcuts(forceAutoSelect: true)
             errorMessage = nil
             currentError = nil
         } catch {
@@ -163,7 +184,7 @@ class MainViewModel: ObservableObject {
     // MARK: - Shortcut Loading
     
     /// Load and parse shortcuts from the VDF file
-    func loadShortcuts() {
+    func loadShortcuts(forceAutoSelect: Bool = false) {
         guard !shortcutsVDFPath.isEmpty else {
             shortcuts = []
             return
@@ -187,23 +208,34 @@ class MainViewModel: ObservableObject {
                 let allShortcuts = try shortcutParser.parseShortcuts(from: vdfData)
                 
                 print("[VIEWMODEL] Parsed \(allShortcuts.count) total shortcuts")
-                for shortcut in allShortcuts.prefix(5) {
-                    print("[VIEWMODEL]   - \(shortcut.appName): exe=\(shortcut.exe.prefix(80))")
-                }
                 
                 // Filter to ROM-related shortcuts only
                 let romShortcuts = shortcutFilter.filterROMShortcuts(from: allShortcuts)
                 
                 print("[VIEWMODEL] Filtered to \(romShortcuts.count) ROM shortcuts")
-                for shortcut in romShortcuts {
-                    let emulator = shortcutFilter.detectEmulator(for: shortcut)
-                    print("[VIEWMODEL]   - \(shortcut.appName): emulator=\(emulator?.rawValue ?? "none")")
-                }
                 
                 await MainActor.run {
                     shortcuts = romShortcuts
                     errorMessage = nil
                     currentError = nil
+                    
+                    // Selection logic:
+                    // 1. If forced, select all.
+                    // 2. If current selection is empty, select all.
+                    // 3. Otherwise, keep current selection but filter to valid IDs.
+                    if forceAutoSelect || selectedShortcutIDs.isEmpty {
+                        selectedShortcutIDs = Set(romShortcuts.map { $0.appID })
+                    } else {
+                        let validIDs = Set(romShortcuts.map { $0.appID })
+                        selectedShortcutIDs = selectedShortcutIDs.intersection(validIDs)
+                        
+                        // If intersection is empty but we have shortcuts, auto-select all
+                        if selectedShortcutIDs.isEmpty && !romShortcuts.isEmpty {
+                            selectedShortcutIDs = Set(romShortcuts.map { $0.appID })
+                        }
+                    }
+                    
+                    saveConfiguration()
                 }
             } catch {
                 print("[VIEWMODEL] ERROR loading shortcuts: \(error.localizedDescription)")
@@ -306,7 +338,8 @@ class MainViewModel: ObservableObject {
         let incrementalManager = IncrementalUpdateManager()
         let changes = incrementalManager.detectChanges(
             currentShortcuts: selectedShortcuts,
-            previousState: previousState
+            previousState: previousState,
+            customNames: customNames
         )
         
         // Clean up orphaned bundles if enabled
@@ -357,6 +390,20 @@ class MainViewModel: ObservableObject {
                 }
                 
                 continue
+            }
+            
+            // If this is a modification with a previous bundle path, delete the old bundle
+            // This handles name changes where the bundle path changes
+            if change.changeType == .modified, let oldBundlePath = change.previousBundlePath {
+                let oldBundleURL = URL(fileURLWithPath: oldBundlePath)
+                if FileManager.default.fileExists(atPath: oldBundlePath) {
+                    do {
+                        try FileManager.default.removeItem(at: oldBundleURL)
+                        print("Deleted old bundle due to modification: \(oldBundlePath)")
+                    } catch {
+                        print("Failed to delete old bundle: \(error)")
+                    }
+                }
             }
             
             do {
@@ -412,9 +459,18 @@ class MainViewModel: ObservableObject {
                     }
                     
                     // Record converted shortcut for state tracking using IncrementalUpdateManager
-                    let convertedShortcut = incrementalManager.buildConvertedShortcut(
+                    let displayName = getDisplayName(for: shortcut)
+                    var convertedShortcut = incrementalManager.buildConvertedShortcut(
                         for: shortcut,
                         bundlePath: bundleURL.path
+                    )
+                    // Update the appName to reflect the display name (custom or original)
+                    convertedShortcut = ConvertedShortcut(
+                        appID: convertedShortcut.appID,
+                        appName: displayName,
+                        launchCommandHash: convertedShortcut.launchCommandHash,
+                        iconHash: convertedShortcut.iconHash,
+                        bundlePath: convertedShortcut.bundlePath
                     )
                     convertedShortcuts.append(convertedShortcut)
                     
@@ -550,8 +606,11 @@ class MainViewModel: ObservableObject {
         launchScript: String,
         outputDirectory: URL
     ) -> AppBundleConfig {
+        // Use custom name if available, otherwise use original name
+        let displayName = getDisplayName(for: shortcut)
+        
         // Sanitize bundle name (remove invalid characters)
-        let sanitizedName = sanitizeBundleName(shortcut.appName)
+        let sanitizedName = sanitizeBundleName(displayName)
         
         // Create bundle identifier
         let bundleIdentifier = "com.steamshortcutconverter.\(sanitizedName.lowercased().replacingOccurrences(of: " ", with: "-"))"
@@ -559,7 +618,7 @@ class MainViewModel: ObservableObject {
         return AppBundleConfig(
             bundleName: sanitizedName,
             bundleIdentifier: bundleIdentifier,
-            displayName: shortcut.appName,
+            displayName: displayName,
             version: "1.0",
             launchScript: launchScript,
             iconData: shortcut.icon,
@@ -572,5 +631,34 @@ class MainViewModel: ObservableObject {
         // Remove characters that are invalid in macOS file names
         let invalidChars = CharacterSet(charactersIn: ":/\\")
         return name.components(separatedBy: invalidChars).joined(separator: "-")
+    }
+    
+    // MARK: - Custom Names
+    
+    /// Get the display name for a shortcut (custom name if set, otherwise original name)
+    func getDisplayName(for shortcut: SteamShortcut) -> String {
+        return customNames[shortcut.appID] ?? shortcut.appName
+    }
+    
+    /// Set a custom name for a shortcut
+    func setCustomName(_ name: String, for shortcut: SteamShortcut) {
+        if name.trimmingCharacters(in: .whitespaces).isEmpty {
+            // If empty, remove custom name
+            customNames.removeValue(forKey: shortcut.appID)
+        } else {
+            customNames[shortcut.appID] = name
+        }
+        saveConfiguration()
+    }
+    
+    /// Check if a shortcut has a custom name
+    func hasCustomName(for shortcut: SteamShortcut) -> Bool {
+        return customNames[shortcut.appID] != nil
+    }
+    
+    /// Reset custom name for a shortcut
+    func resetCustomName(for shortcut: SteamShortcut) {
+        customNames.removeValue(forKey: shortcut.appID)
+        saveConfiguration()
     }
 }

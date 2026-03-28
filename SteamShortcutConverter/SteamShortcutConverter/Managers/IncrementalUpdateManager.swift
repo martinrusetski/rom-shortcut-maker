@@ -40,10 +40,12 @@ class IncrementalUpdateManager {
     /// - Parameters:
     ///   - currentShortcuts: Current shortcuts from VDF file
     ///   - previousState: Previous conversion state (nil if first conversion)
+    ///   - customNames: Dictionary of custom names for shortcuts
     /// - Returns: Dictionary mapping app IDs to their change types
     func detectChanges(
         currentShortcuts: [SteamShortcut],
-        previousState: ConversionState?
+        previousState: ConversionState?,
+        customNames: [UInt32: String] = [:]
     ) -> [UInt32: ShortcutChange] {
         var changes: [UInt32: ShortcutChange] = [:]
         
@@ -75,11 +77,24 @@ class IncrementalUpdateManager {
                 let currentLaunchHash = computeLaunchCommandHash(for: shortcut)
                 let currentIconHash = computeIconHash(for: shortcut)
                 
+                // Get current display name (custom or original)
+                let currentDisplayName = customNames[shortcut.appID] ?? shortcut.appName
+                
                 // Check if the bundle actually exists on disk
                 let bundleExists = fileManager.fileExists(atPath: previous.bundlePath)
                 
+                // Check if the name has changed (which would change the bundle path)
+                let nameChanged = currentDisplayName != previous.appName
+                
                 if !bundleExists {
                     // Bundle was deleted - treat as modified to regenerate
+                    changes[shortcut.appID] = ShortcutChange(
+                        shortcut: shortcut,
+                        changeType: .modified,
+                        previousBundlePath: previous.bundlePath
+                    )
+                } else if nameChanged {
+                    // Name changed - need to delete old bundle and create new one
                     changes[shortcut.appID] = ShortcutChange(
                         shortcut: shortcut,
                         changeType: .modified,
