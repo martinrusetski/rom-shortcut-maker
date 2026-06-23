@@ -30,25 +30,25 @@ class LaunchCommandParser {
     /// - Returns: LaunchConfiguration with executable path, arguments, and working directory
     /// - Throws: LaunchCommandParserError if parsing fails
     func parseLaunchConfiguration(from shortcut: SteamShortcut) throws -> LaunchConfiguration {
-        // The exe field contains the full command line (executable + arguments)
-        let fullCommand = shortcut.exe.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        guard !fullCommand.isEmpty else {
+        // The exe field holds a single executable path. It may be wrapped in
+        // matching quotes, but it is NOT a full command line — arguments live in
+        // the LaunchOptions field. Treating it as a whole path keeps unquoted
+        // paths that contain spaces (e.g. "/Applications/My Emulator.app/...")
+        // intact instead of splitting them on the first space.
+        let executablePath = stripSurroundingQuotes(
+            shortcut.exe.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+
+        guard !executablePath.isEmpty else {
             throw LaunchCommandParserError.emptyExecutablePath
         }
-        
-        // Parse the full command to extract executable and arguments
-        let (executablePath, exeArguments) = parseCommandLine(fullCommand)
-        
+
         // Handle path resolution for executable
         let resolvedExecutablePath = resolvePath(executablePath, relativeTo: shortcut.startDir)
-        
-        // Extract additional arguments from LaunchOptions field
-        var launchOptionsArgs = parseArguments(from: shortcut.launchOptions)
-        
-        // Combine arguments from exe field and LaunchOptions field
-        var allArguments = exeArguments + launchOptionsArgs
-        
+
+        // Arguments come exclusively from the LaunchOptions field
+        var allArguments = parseArguments(from: shortcut.launchOptions)
+
         // Resolve paths in arguments (only for arguments that look like paths)
         allArguments = allArguments.map { arg in
             // Only resolve if it looks like a path (not a flag starting with -)
@@ -102,64 +102,19 @@ class LaunchCommandParser {
     
     // MARK: - Private Methods
     
-    /// Parse a command line string into executable and arguments
-    /// Handles quoted paths and arguments properly
-    /// - Parameter commandLine: The full command line string
-    /// - Returns: Tuple of (executable path, arguments array)
-    private func parseCommandLine(_ commandLine: String) -> (String, [String]) {
-        var parts: [String] = []
-        var currentPart = ""
-        var insideQuotes = false
-        var quoteChar: Character?
-        var escapeNext = false
-        
-        for char in commandLine {
-            if escapeNext {
-                currentPart.append(char)
-                escapeNext = false
-                continue
-            }
-            
-            if char == "\\" {
-                escapeNext = true
-                continue
-            }
-            
-            if char == "\"" || char == "'" {
-                if insideQuotes {
-                    if char == quoteChar {
-                        insideQuotes = false
-                        quoteChar = nil
-                    } else {
-                        currentPart.append(char)
-                    }
-                } else {
-                    insideQuotes = true
-                    quoteChar = char
-                }
-                continue
-            }
-            
-            if char.isWhitespace && !insideQuotes {
-                if !currentPart.isEmpty {
-                    parts.append(currentPart)
-                    currentPart = ""
-                }
-                continue
-            }
-            
-            currentPart.append(char)
+    /// Strip a single pair of matching surrounding quotes from a string.
+    /// `"/Applications/My App.app"` → `/Applications/My App.app`. Internal
+    /// spaces are preserved. Unquoted strings are returned unchanged.
+    /// - Parameter value: The string to unwrap
+    /// - Returns: The string without surrounding quotes
+    private func stripSurroundingQuotes(_ value: String) -> String {
+        guard value.count >= 2, let first = value.first, let last = value.last else {
+            return value
         }
-        
-        if !currentPart.isEmpty {
-            parts.append(currentPart)
+        if (first == "\"" && last == "\"") || (first == "'" && last == "'") {
+            return String(value.dropFirst().dropLast())
         }
-        
-        // First part is the executable, rest are arguments
-        let executable = parts.first ?? ""
-        let arguments = Array(parts.dropFirst())
-        
-        return (executable, arguments)
+        return value
     }
     
     /// Determine if an argument should be resolved as a path

@@ -78,12 +78,12 @@ class FileLocationManager {
                         foundPaths.append(shortcutsPath)
                     } catch {
                         // Skip invalid files
-                        print("Skipping invalid VDF file: \(shortcutsPath)")
+                        Logger.shared.warning("Skipping invalid VDF file: \(shortcutsPath)")
                     }
                 }
             }
         } catch {
-            print("Error enumerating Steam userdata directory: \(error)")
+            Logger.shared.error("Error enumerating Steam userdata directory", error: error)
         }
         
         return foundPaths

@@ -33,33 +33,28 @@ struct SettingsView: View {
             Divider()
             
             // Settings content
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    // Shortcuts.vdf selection
+            Form {
+                Section {
                     shortcutsFileSection
-                    
-                    Divider()
-                    
-                    // Output directory selection
+                }
+                
+                Section {
                     outputDirectorySection
-                    
-                    Divider()
-                    
-                    // Conversion settings
+                }
+                
+                Section {
                     conversionSettingsSection
-                    
-                    Divider()
-                    
-                    // Info section
+                }
+                
+                Section {
                     infoSection
-                    
-                    Divider()
-                    
-                    // Reset configuration
+                }
+                
+                Section {
                     resetSection
                 }
-                .padding()
             }
+            .formStyle(.grouped)
         }
         .frame(width: 600, height: 500)
     }
@@ -68,43 +63,48 @@ struct SettingsView: View {
     
     private var shortcutsFileSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Shortcuts File")
-                .font(.headline)
+            LabeledContent("Shortcuts File") {
+                HStack(spacing: 8) {
+                    Button("Auto-Detect") {
+                        viewModel.autoDetectShortcutsFile()
+                    }
+                    
+                    Button("Browse...") {
+                        showingShortcutsFilePicker = true
+                    }
+                    .fileImporter(
+                        isPresented: $showingShortcutsFilePicker,
+                        allowedContentTypes: [.item, .data],
+                        allowsMultipleSelection: false
+                    ) { result in
+                        handleShortcutsFileSelection(result)
+                    }
+                }
+            }
             
-            Text("Select your Steam shortcuts.vdf file")
-                .font(.caption)
-                .foregroundColor(.secondary)
-            
-            HStack {
-                TextField("Path to shortcuts.vdf", text: $viewModel.shortcutsVDFPath)
-                    .textFieldStyle(.roundedBorder)
-                    .disabled(true)
-                
-                Button("Browse...") {
-                    showingShortcutsFilePicker = true
-                }
-                .fileImporter(
-                    isPresented: $showingShortcutsFilePicker,
-                    allowedContentTypes: [.item, .data],
-                    allowsMultipleSelection: false
-                ) { result in
-                    handleShortcutsFileSelection(result)
-                }
-                
-                Button("Auto-Detect") {
-                    viewModel.autoDetectShortcutsFile()
-                }
+            if !viewModel.shortcutsVDFPath.isEmpty {
+                Text(viewModel.shortcutsVDFPath)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
             }
             
             // Show auto-detected paths if available
             if !viewModel.autoDetectedPaths.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Auto-detected files:")
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Auto-detected:")
                         .font(.caption)
                         .foregroundColor(.secondary)
                     
                     ForEach(viewModel.autoDetectedPaths, id: \.self) { path in
-                        HStack {
+                        HStack(spacing: 8) {
+                            if viewModel.shortcutsVDFPath == path {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                    .font(.caption)
+                            }
+                            
                             Text(path)
                                 .font(.caption)
                                 .lineLimit(1)
@@ -112,21 +112,18 @@ struct SettingsView: View {
                             
                             Spacer()
                             
-                            if viewModel.shortcutsVDFPath == path {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                            } else {
-                                    Button("Use") {
-                                        viewModel.shortcutsVDFPath = path
-                                        viewModel.saveConfiguration()
-                                        viewModel.loadShortcuts(forceAutoSelect: true)
-                                    }
+                            if viewModel.shortcutsVDFPath != path {
+                                Button("Use") {
+                                    viewModel.shortcutsVDFPath = path
+                                    viewModel.saveConfiguration()
+                                    viewModel.loadShortcuts(forceAutoSelect: true)
+                                }
                                 .buttonStyle(.borderless)
+                                .controlSize(.small)
                             }
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.secondary.opacity(0.1))
+                        .padding(6)
+                        .background(Color.secondary.opacity(0.08))
                         .cornerRadius(4)
                     }
                 }
@@ -138,18 +135,7 @@ struct SettingsView: View {
     
     private var outputDirectorySection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Output Directory")
-                .font(.headline)
-            
-            Text("Choose where to save the generated app bundles")
-                .font(.caption)
-                .foregroundColor(.secondary)
-            
-            HStack {
-                TextField("Output directory path", text: $viewModel.outputDirectory)
-                    .textFieldStyle(.roundedBorder)
-                    .disabled(true)
-                
+            LabeledContent("Output Directory") {
                 Button("Choose...") {
                     showingOutputDirectoryPicker = true
                 }
@@ -161,92 +147,65 @@ struct SettingsView: View {
                     handleOutputDirectorySelection(result)
                 }
             }
+            
+            if !viewModel.outputDirectory.isEmpty {
+                Text(viewModel.outputDirectory)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+            }
         }
     }
     
     // MARK: - Conversion Settings Section
     
     private var conversionSettingsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Conversion Settings")
-                .font(.headline)
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle("Remove orphaned bundles", isOn: $viewModel.removeOrphanedBundles)
+                .onChange(of: viewModel.removeOrphanedBundles) { _ in
+                    viewModel.saveConfiguration()
+                }
             
-            VStack(alignment: .leading, spacing: 16) {
-                // Remove orphaned bundles checkbox
-                Toggle("Remove orphaned bundles", isOn: $viewModel.removeOrphanedBundles)
-                    .onChange(of: viewModel.removeOrphanedBundles) { _ in
-                        viewModel.saveConfiguration()
-                    }
-                
-                Text("When enabled, app bundles for shortcuts that no longer exist will be deleted during conversion.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.leading, 20)
-            }
-            .padding()
-            .background(Color.secondary.opacity(0.05))
-            .cornerRadius(8)
+            Text("Delete app bundles for shortcuts that no longer exist")
+                .font(.caption)
+                .foregroundColor(.secondary)
         }
     }
     
     // MARK: - Info Section
     
     private var infoSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Information")
-                .font(.headline)
-            
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Last Conversion:")
+        LabeledContent("Last Conversion") {
+            if let lastDate = viewModel.lastConversionDate {
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(lastDate, style: .date)
                         .font(.subheadline)
+                    Text(lastDate, style: .time)
+                        .font(.caption)
                         .foregroundColor(.secondary)
-                    
-                    Spacer()
-                    
-                    if let lastDate = viewModel.lastConversionDate {
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text(lastDate, style: .date)
-                                .font(.subheadline)
-                            Text(lastDate, style: .time)
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        }
-                    } else {
-                        Text("Never")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
                 }
+            } else {
+                Text("Never")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
             }
-            .padding()
-            .background(Color.secondary.opacity(0.05))
-            .cornerRadius(8)
         }
     }
     
     // MARK: - Reset Section
     
     private var resetSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Reset")
-                .font(.headline)
-            
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Reset all settings to their default values. This will clear your shortcuts file path, output directory, and all custom names.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Button(role: .destructive) {
-                    viewModel.resetConfiguration()
-                } label: {
-                    Label("Reset Configuration", systemImage: "arrow.counterclockwise")
-                }
-                .buttonStyle(.bordered)
+        VStack(alignment: .leading, spacing: 8) {
+            Button(role: .destructive) {
+                viewModel.resetConfiguration()
+            } label: {
+                Label("Reset Configuration", systemImage: "arrow.counterclockwise")
             }
-            .padding()
-            .background(Color.secondary.opacity(0.05))
-            .cornerRadius(8)
+            
+            Text("Clear all settings and custom names")
+                .font(.caption)
+                .foregroundColor(.secondary)
         }
     }
     

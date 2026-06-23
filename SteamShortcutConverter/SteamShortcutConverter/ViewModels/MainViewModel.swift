@@ -88,7 +88,7 @@ class MainViewModel: ObservableObject {
                     }
                 }
             } catch {
-                print("Failed to load configuration: \(error)")
+                Logger.shared.error("Failed to load configuration", error: error)
                 await MainActor.run {
                     // Try auto-detect if loading failed or file doesn't exist
                     autoDetectShortcutsFile()
@@ -110,9 +110,8 @@ class MainViewModel: ObservableObject {
         Task {
             do {
                 try await configurationManager.saveConfiguration(config)
-                print("[CONFIG] Saved configuration successfully")
             } catch {
-                print("Failed to save configuration: \(error)")
+                Logger.shared.error("Failed to save configuration", error: error)
             }
         }
     }
@@ -190,30 +189,22 @@ class MainViewModel: ObservableObject {
             return
         }
         
-        print("[VIEWMODEL] loadShortcuts() called with path: \(shortcutsVDFPath)")
-        
         Task {
             do {
                 // Read VDF file
                 let fileURL = URL(fileURLWithPath: shortcutsVDFPath)
                 let fileData = try Data(contentsOf: fileURL)
-                
-                print("[VIEWMODEL] Loaded VDF file, size=\(fileData.count) bytes")
-                
+
                 // Create reader and parse VDF
                 let binaryVDFReader = BinaryVDFReader(data: fileData)
                 let vdfData = try binaryVDFReader.read()
-                
+
                 // Parse shortcuts
                 let allShortcuts = try shortcutParser.parseShortcuts(from: vdfData)
-                
-                print("[VIEWMODEL] Parsed \(allShortcuts.count) total shortcuts")
-                
+
                 // Filter to ROM-related shortcuts only
                 let romShortcuts = shortcutFilter.filterROMShortcuts(from: allShortcuts)
-                
-                print("[VIEWMODEL] Filtered to \(romShortcuts.count) ROM shortcuts")
-                
+
                 await MainActor.run {
                     shortcuts = romShortcuts
                     errorMessage = nil
@@ -238,7 +229,7 @@ class MainViewModel: ObservableObject {
                     saveConfiguration()
                 }
             } catch {
-                print("[VIEWMODEL] ERROR loading shortcuts: \(error.localizedDescription)")
+                Logger.shared.error("Failed to load shortcuts from VDF", error: error)
                 await MainActor.run {
                     shortcuts = []
                     let appError = AppError.invalidVDFFormat(path: shortcutsVDFPath)
@@ -350,7 +341,7 @@ class MainViewModel: ObservableObject {
             )
             removed = deletedPaths.count
         } catch {
-            print("Failed to cleanup orphaned bundles: \(error)")
+            Logger.shared.error("Failed to cleanup orphaned bundles", error: error)
         }
         
         // Process each selected shortcut based on change type
@@ -399,9 +390,8 @@ class MainViewModel: ObservableObject {
                 if FileManager.default.fileExists(atPath: oldBundlePath) {
                     do {
                         try FileManager.default.removeItem(at: oldBundleURL)
-                        print("Deleted old bundle due to modification: \(oldBundlePath)")
                     } catch {
-                        print("Failed to delete old bundle: \(error)")
+                        Logger.shared.error("Failed to delete old bundle: \(oldBundlePath)", error: error)
                     }
                 }
             }
@@ -531,7 +521,7 @@ class MainViewModel: ObservableObject {
         do {
             try await configurationManager.saveConversionState(conversionState)
         } catch {
-            print("Failed to save conversion state: \(error)")
+            Logger.shared.error("Failed to save conversion state", error: error)
         }
         
         // Update last conversion date
@@ -566,11 +556,14 @@ class MainViewModel: ObservableObject {
         // Handle .app bundles - need to find the actual executable
         var executablePath = config.executablePath
         if executablePath.hasSuffix(".app") {
-            // For .app bundles, we need to use 'open' command or find the actual executable
-            // Use 'open' command which handles app bundles properly
             script += "open -a \"\(executablePath)\""
-            
-            // Add --args flag before arguments when using 'open'
+            if !config.arguments.isEmpty {
+                script += " --args"
+            }
+        } else if let appRange = executablePath.range(of: ".app/") {
+            // Binary inside an .app bundle (e.g. /App.app/Contents/MacOS/Binary)
+            let appPath = String(executablePath[..<appRange.upperBound].dropLast())
+            script += "open -a \"\(appPath)\""
             if !config.arguments.isEmpty {
                 script += " --args"
             }

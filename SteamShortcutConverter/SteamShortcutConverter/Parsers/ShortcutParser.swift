@@ -60,7 +60,7 @@ class ShortcutParser {
                 shortcuts.append(shortcut)
             } catch {
                 // Log error but continue parsing other shortcuts
-                print("Warning: Failed to parse shortcut \(key): \(error)")
+                Logger.shared.warning("Failed to parse shortcut \(key): \(error.localizedDescription)")
                 continue
             }
         }
@@ -72,15 +72,23 @@ class ShortcutParser {
     
     /// Parse a single shortcut entry
     private func parseShortcutEntry(id: String, data: [String: Any]) throws -> SteamShortcut {
-        // Extract required fields - VDF field names are case-sensitive and lowercase
+        // Steam treats VDF keys case-insensitively, and the exact casing
+        // (e.g. "AppName" vs "appname") has varied across Steam versions.
+        // Normalize to lowercase keys so lookups are robust to either form.
+        let data = Dictionary(
+            data.map { ($0.key.lowercased(), $0.value) },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        // Extract required fields
         guard let appName = data["appname"] as? String else {
             throw ShortcutParserError.missingRequiredField(id, "appname")
         }
-        
+
         guard let exe = data["exe"] as? String else {
             throw ShortcutParserError.missingRequiredField(id, "exe")
         }
-        
+
         // appid can be either Int32 or UInt32 in VDF
         let appID: UInt32
         if let appIDInt32 = data["appid"] as? Int32 {
@@ -90,14 +98,14 @@ class ShortcutParser {
         } else {
             throw ShortcutParserError.missingRequiredField(id, "appid")
         }
-        
+
         // Extract optional fields
-        let startDir = data["StartDir"] as? String
-        let launchOptions = data["LaunchOptions"] as? String
-        
+        let startDir = data["startdir"] as? String
+        let launchOptions = data["launchoptions"] as? String
+
         // Extract icon data
         let icon = extractIconData(from: data)
-        
+
         // Extract tags
         let tags = extractTags(from: data)
         

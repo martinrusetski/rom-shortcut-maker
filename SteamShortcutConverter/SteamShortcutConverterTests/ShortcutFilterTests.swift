@@ -186,6 +186,28 @@ final class ShortcutFilterTests: XCTestCase {
         XCTAssertEqual(detected, .yuzu, "Should detect Yuzu")
     }
     
+    func testDetectAstris() {
+        let shortcut = SteamShortcut(
+            appID: 19,
+            appName: "Test Game",
+            exe: "/Applications/Astris.app"
+        )
+        
+        let detected = filter.detectEmulator(for: shortcut)
+        XCTAssertEqual(detected, .astris, "Should detect Astris")
+    }
+    
+    func testDetectAstrisCaseInsensitive() {
+        let shortcut = SteamShortcut(
+            appID: 20,
+            appName: "Test Game",
+            exe: "/Users/games/astris"
+        )
+        
+        let detected = filter.detectEmulator(for: shortcut)
+        XCTAssertEqual(detected, .astris, "Should detect Astris case-insensitive")
+    }
+    
     // MARK: - Non-Emulator Detection Tests
     
     func testNonEmulatorShortcutNotDetected() {

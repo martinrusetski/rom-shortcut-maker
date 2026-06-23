@@ -25,10 +25,8 @@ struct ContentView: View {
                         // Shortcut list
                         shortcutListSection
                         
-                        Divider()
-                        
-                        // Progress view
-                        progressSection
+                        // Convert button and progress section
+                        convertAndProgressSection
                     }
                     .padding()
                 }
@@ -152,23 +150,19 @@ struct ContentView: View {
         }
     }
     
-    // MARK: - Progress Section
+    // MARK: - Convert and Progress Section
     
-    private var progressSection: some View {
+    private var convertAndProgressSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Progress")
-                .font(.headline)
-            
             if viewModel.isProcessing {
+                // Show progress when processing
                 VStack(alignment: .leading, spacing: 12) {
-                    // Current game being processed
                     if !viewModel.progressMessage.isEmpty {
                         Text(viewModel.progressMessage)
                             .font(.subheadline)
                             .foregroundColor(.primary)
                     }
                     
-                    // Progress bar with percentage
                     VStack(alignment: .leading, spacing: 4) {
                         ProgressView(value: viewModel.progressValue)
                         
@@ -179,7 +173,6 @@ struct ContentView: View {
                             
                             Spacer()
                             
-                            // Counts: processed / total (remaining)
                             Text("\(viewModel.processedCount) / \(viewModel.totalCount) (\(viewModel.remainingCount) remaining)")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
@@ -187,8 +180,8 @@ struct ContentView: View {
                     }
                 }
             } else {
+                // Show convert button when not processing
                 VStack(alignment: .leading, spacing: 12) {
-                    // Show helpful message if button is disabled
                     if !viewModel.canProceed || viewModel.selectedShortcutIDs.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             if viewModel.shortcutsVDFPath.isEmpty {
@@ -226,7 +219,7 @@ struct ContentView: View {
                         .cornerRadius(8)
                     } else {
                         Text("Ready to convert \(viewModel.selectedShortcutIDs.count) shortcut\(viewModel.selectedShortcutIDs.count == 1 ? "" : "s")")
-                            .font(.caption)
+                            .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
                     

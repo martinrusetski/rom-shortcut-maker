@@ -60,15 +60,21 @@ class IncrementalUpdateManager {
             return changes
         }
         
-        // Build lookup dictionary for previous shortcuts
-        let previousShortcuts = Dictionary(
-            uniqueKeysWithValues: previousState.convertedShortcuts.map { ($0.appID, $0) }
-        )
+        // Build lookup dictionary for previous shortcuts (handle duplicates by keeping first)
+        var previousShortcuts: [UInt32: ConvertedShortcut] = [:]
+        for record in previousState.convertedShortcuts {
+            if previousShortcuts[record.appID] == nil {
+                previousShortcuts[record.appID] = record
+            }
+        }
         
-        // Build lookup dictionary for current shortcuts
-        let currentShortcutsDict = Dictionary(
-            uniqueKeysWithValues: currentShortcuts.map { ($0.appID, $0) }
-        )
+        // Build lookup dictionary for current shortcuts (handle duplicates by keeping first)
+        var currentShortcutsDict: [UInt32: SteamShortcut] = [:]
+        for shortcut in currentShortcuts {
+            if currentShortcutsDict[shortcut.appID] == nil {
+                currentShortcutsDict[shortcut.appID] = shortcut
+            }
+        }
         
         // Check current shortcuts for new or modified entries
         for shortcut in currentShortcuts {
@@ -209,7 +215,7 @@ class IncrementalUpdateManager {
                 if fileManager.fileExists(atPath: bundlePath) {
                     try fileManager.removeItem(at: bundleURL)
                     deletedPaths.append(bundlePath)
-                    print("Deleted orphaned bundle: \(bundlePath)")
+                    Logger.shared.logBundleDeleted(bundlePath)
                 }
             }
         }

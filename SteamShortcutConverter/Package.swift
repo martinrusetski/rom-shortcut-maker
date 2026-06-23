@@ -3,31 +3,37 @@
 
 import PackageDescription
 
+// This package exists for HEADLESS testing of the app's logic (`swift test`).
+// The shippable macOS app is built from SteamShortcutConverter.xcodeproj.
+//
+// The library target compiles the same source files as the app target, EXCEPT
+// `SteamShortcutConverterApp.swift` (the `@main` entry point), which can only be
+// compiled in an executable context. Everything the tests touch — parsers,
+// filters, generators, managers, view models — lives in this library, so the
+// suite runs without launching the GUI.
 let package = Package(
     name: "SteamShortcutConverter",
     platforms: [
-        .macOS(.v12)
+        .macOS(.v13)
     ],
     products: [
         .library(
             name: "SteamShortcutConverter",
             targets: ["SteamShortcutConverter"])
     ],
-    dependencies: [
-        // SwiftCheck for property-based testing (optional)
-        // Uncomment to enable property-based testing:
-        // .package(url: "https://github.com/typelift/SwiftCheck.git", from: "0.12.0")
-    ],
     targets: [
         .target(
             name: "SteamShortcutConverter",
-            dependencies: []),
+            path: "SteamShortcutConverter",
+            exclude: [
+                "SteamShortcutConverterApp.swift"
+            ]),
         .testTarget(
             name: "SteamShortcutConverterTests",
-            dependencies: [
-                "SteamShortcutConverter",
-                // Uncomment to enable property-based testing:
-                // "SwiftCheck"
+            dependencies: ["SteamShortcutConverter"],
+            path: "SteamShortcutConverterTests",
+            exclude: [
+                "Fixtures/README.md"
             ])
     ]
 )

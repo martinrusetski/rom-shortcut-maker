@@ -11,13 +11,24 @@ import XCTest
 final class IncrementalUpdateManagerTests: XCTestCase {
     
     var manager: IncrementalUpdateManager!
-    
+    var tempDir: URL!
+
     override func setUp() {
         super.setUp()
         manager = IncrementalUpdateManager()
+        // Real temp dir so previous-state bundle paths exist on disk. detectChanges
+        // treats a missing bundle as .modified (regenerate), so unchanged-metadata
+        // tests must point at bundles that actually exist.
+        tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("IncrementalUpdateManagerTests-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
     }
-    
+
     override func tearDown() {
+        if let tempDir = tempDir {
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+        tempDir = nil
         manager = nil
         super.tearDown()
     }
@@ -294,11 +305,13 @@ final class IncrementalUpdateManagerTests: XCTestCase {
     }
     
     private func createTestConversionState(shortcuts: [SteamShortcut]) -> ConversionState {
-        let convertedShortcuts = shortcuts.map { shortcut in
-            manager.buildConvertedShortcut(
-                for: shortcut,
-                bundlePath: "/output/\(shortcut.appName).app"
-            )
+        let convertedShortcuts = shortcuts.map { shortcut -> ConvertedShortcut in
+            // Create the bundle directory on disk so detectChanges sees it as
+            // existing and compares metadata rather than flagging it for regeneration.
+            let bundlePath = tempDir.appendingPathComponent("\(shortcut.appName).app").path
+            try? FileManager.default.createDirectory(
+                atPath: bundlePath, withIntermediateDirectories: true)
+            return manager.buildConvertedShortcut(for: shortcut, bundlePath: bundlePath)
         }
         
         return ConversionState(

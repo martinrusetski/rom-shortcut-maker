@@ -40,22 +40,16 @@ class DefaultShortcutFilter: ShortcutFilter {
         // Extract the executable name from the path
         // Handle both .app bundle paths and direct executable paths
         let executableName = extractExecutableName(from: lowercasedPath)
-        
-        print("[FILTER] path=\(path.prefix(80))")
-        print("[FILTER] lowercased=\(lowercasedPath.prefix(80))")
-        print("[FILTER] extracted=\(executableName)")
-        
+
         // Check each emulator type for pattern matches
         for emulatorType in EmulatorType.allCases {
             for pattern in emulatorType.executablePatterns {
                 if executableName.contains(pattern.lowercased()) {
-                    print("[FILTER] MATCHED \(emulatorType.rawValue)")
                     return emulatorType
                 }
             }
         }
-        
-        print("[FILTER] NO MATCH")
+
         return nil
     }
     
@@ -67,20 +61,18 @@ class DefaultShortcutFilter: ShortcutFilter {
     /// - Returns: The executable name component
     private func extractExecutableName(from path: String) -> String {
         var processedPath = path.trimmingCharacters(in: .whitespaces)
-        
-        // If the path starts with a quote, extract just the quoted part
+
+        // The exe field is a single executable path. If it is wrapped in quotes,
+        // extract the quoted contents; otherwise use the whole string. We must NOT
+        // split on spaces — a path like "/Applications/My Emulators/RetroArch.app"
+        // contains spaces yet is a single path.
         if processedPath.hasPrefix("\"") {
             // Find the closing quote
             if let endQuoteIndex = processedPath.dropFirst().firstIndex(of: "\"") {
                 processedPath = String(processedPath[processedPath.index(after: processedPath.startIndex)..<endQuoteIndex])
             }
-        } else {
-            // No quotes - split on space to get just the executable path
-            if let spaceIndex = processedPath.firstIndex(of: " ") {
-                processedPath = String(processedPath[..<spaceIndex])
-            }
         }
-        
+
         // Remove .app extension if present
         if processedPath.hasSuffix(".app") {
             processedPath = String(processedPath.dropLast(4))

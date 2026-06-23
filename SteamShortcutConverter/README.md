@@ -73,12 +73,18 @@ Protocol for managing application configuration persistence.
 
 ## Testing
 
-Run tests using:
+Run the unit tests headlessly with Swift Package Manager (recommended):
 ```bash
-xcodebuild test -project SteamShortcutConverter.xcodeproj -scheme SteamShortcutConverter -destination 'platform=macOS'
+swift test
 ```
+This builds the logic into a library (everything except the `@main` app entry,
+which `Package.swift` excludes) and runs the full suite without launching the GUI.
 
-Or use Xcode's Test Navigator (⌘6) and click the test button.
+> **Note:** Do not use `xcodebuild test` / Xcode's ⌘U yet. The Xcode test target is
+> hosted *inside* the app target, so running it launches the GUI app, which traps on
+> launch under the test runner (EXC_BREAKPOINT) and spams crash dialogs. Until the
+> Xcode test target is reconfigured as a standalone (non-hosted) unit-test bundle,
+> use `swift test`.
 
 ## Property-Based Testing (Optional)
 
