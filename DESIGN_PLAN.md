@@ -105,8 +105,8 @@ struct GameEntry: Identifiable, Codable, Equatable {
     let romPath: URL               // Path to ROM file on disk
     var romMetadata: ROMMetadata   // Parsed from filename
     var platform: Platform         // Resolved platform (see SystemDatabase)
-    var emulator: EmulatorType?    // Assigned emulator (nil = unresolved)
-    var emulatorPath: URL?         // Resolved emulator executable path (nil = not found)
+    var emulator: EmulatorChoice?  // Assigned emulator choice (nil = unresolved)
+    var emulatorPath: URL?         // Resolved executable path (the RetroArch binary, for cores)
     var argsTemplate: String       // Argument template (defaults from emulator DB)
     var isSelected: Bool
     var artworkStatus: ArtworkStatus
@@ -115,6 +115,17 @@ struct GameEntry: Identifiable, Codable, Equatable {
     // Stable identity for caching/overrides: derived from romPath, NOT the random UUID.
     // Use this (not `id`) as the key for gameOverrides and artwork cache.
     var stableKey: String { /* sha256 of romPath.standardizedFileURL.path */ }
+}
+
+/// How a ROM is launched: either a standalone emulator, or RetroArch with a
+/// specific core. A platform can have several valid choices (e.g. Snes9x.app,
+/// RetroArch+snes9x core, RetroArch+bsnes core) and which ones are usable
+/// depends on what the user has installed. This is why the assignment is a
+/// choice, not a bare EmulatorType — "RetroArch" alone is ambiguous when more
+/// than one core can run the system.
+enum EmulatorChoice: Codable, Equatable, Hashable {
+    case standalone(EmulatorType)
+    case retroArchCore(core: String)   // e.g. "snes9x_libretro.dylib"
 }
 
 enum ArtworkStatus: Codable, Equatable {
@@ -238,65 +249,89 @@ emulators, cores) and must be editable/diffable/testable without recompiling enu
       "displayName": "SNES",
       "folderAliases": ["snes", "super nintendo", "sfc", "super famicom"],
       "romExtensions": [".smc", ".sfc", ".fig", ".bs", ".swc", ".st"],
-      "primaryEmulator": "Snes9x",
-      "retroArchCore": "snes9x_libretro.dylib"
+      "emulatorOptions": [
+        { "type": "standalone",    "emulator": "Snes9x" },
+        { "type": "standalone",    "emulator": "bsnes" },
+        { "type": "retroArchCore", "core": "snes9x_libretro.dylib", "displayName": "Snes9x (RetroArch)" },
+        { "type": "retroArchCore", "core": "bsnes_libretro.dylib",  "displayName": "bsnes (RetroArch)" }
+      ]
+    },
+    {
+      "id": "wiiu",
+      "displayName": "Wii U",
+      "folderAliases": ["wiiu", "wii u"],
+      "romExtensions": [".wua", ".wud", ".wux", ".rpx"],
+      "emulatorOptions": [
+        { "type": "standalone", "emulator": "Cemu" }
+      ]
     }
   ],
   "emulators": [
-    {
-      "id": "Snes9x",
-      "argsTemplate": "\"{emulator}\" \"{rom}\"",
-      "retroArchCore": null
-    },
-    {
-      "id": "RetroArch",
-      "argsTemplate": "\"{emulator}\" -L \"{core}\" \"{rom}\""
-    }
+    { "id": "Snes9x",    "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "bsnes",     "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "RetroArch", "argsTemplate": "\"{emulator}\" -L \"{core}\" \"{rom}\"" }
   ]
 }
 ```
 
-- `id` in `emulators[]` must match an `EmulatorType.rawValue`. A `SystemDatabaseTests` test
-  **asserts every `EmulatorType` case has a JSON entry and vice versa** (catches drift).
-- `folderAliases` are lowercased directory-name tokens used for folder-based platform
-  inference (Phase A3) — this is the **primary** platform signal.
-- Populate the platform table from the list below (extend `romExtensions` as needed). Start
-  with the mainstream platforms; niche systems can map to RetroArch cores.
+**Model rationale (read this — it drives several phases):** A platform owns an **ordered list of
+emulator options**. Each option is *either* `standalone` (references an `EmulatorType`) *or*
+`retroArchCore` (references a specific core `.dylib`). This is deliberately many-to-many:
+- A system may list **several standalone emulators** (the user picks which one they have/prefer).
+- A system may list **several RetroArch cores** (RA has more than one core per system).
+- A system may have **no RetroArch option at all** (e.g. `wiiu` → Cemu only). Do **not** assume
+  RetroArch can run everything — only list a `retroArchCore` option when a real core exists.
+- Order = preference. Auto-assignment (Phase A4) picks the first option that is actually
+  installed + enabled; the user can override.
 
-| Platform id | display | primary emu | RA core | extensions |
-|---|---|---|---|---|
-| nes | NES | Mesen | mesen_libretro | .nes .fds .unf |
-| snes | SNES | Snes9x | snes9x_libretro | .smc .sfc .fig .bs |
-| gb | Game Boy | SameBoy | gambatte_libretro | .gb .gbc |
-| gba | GBA | mGBA | mgba_libretro | .gba .agb |
-| n64 | N64 | Mupen64Plus | mupen64plus_next_libretro | .n64 .z64 .v64 |
-| nds | DS | melonDS | melonds_libretro | .nds .dsi |
-| 3ds | 3DS | Azahar | citra_libretro | .3ds .cia .cci .cxi |
-| gamecube | GameCube | Dolphin | dolphin_libretro | .iso .gcm .rvz .ciso |
-| wii | Wii | Dolphin | dolphin_libretro | .iso .wbfs .rvz .wad |
-| ps1 | PS1 | DuckStation | swanstation_libretro | .cue .chd .bin .m3u .pbp |
-| ps2 | PS2 | PCSX2 | pcsx2_libretro | .iso .chd .cso .bin |
-| psp | PSP | PPSSPP | ppsspp_libretro | .iso .cso .chd .pbp |
-| ps3 | PS3 | RPCS3 | — | .iso .pkg |
-| genesis | Genesis | ares | genesis_plus_gx_libretro | .md .smd .gen .bin |
-| saturn | Saturn | Mednafen | beetle_saturn_libretro | .cue .chd .m3u .ccd |
-| dreamcast | Dreamcast | Flycast | flycast_libretro | .cdi .chd .gdi .cue |
-| arcade | Arcade | MAME | fbneo_libretro | .zip |
-| dos | DOS | DOSBox | dosbox_pure_libretro | .exe .bat .conf .dosz |
-| wiiu | Wii U | Cemu | — | .wua .wud .wux .rpx |
-| switch | Switch | Ryujinx | — | .nsp .xci .nro .nca |
+- `emulator`/`id` values must match an `EmulatorType.rawValue`. A `SystemDatabaseTests` test
+  **asserts every `standalone` option and every `emulators[]` id maps to a real `EmulatorType`**
+  (catches drift).
+- `folderAliases` are lowercased directory-name tokens for folder-based platform inference
+  (Phase A3) — the **primary** platform signal.
+- Seed the platform list from the table below. The "options (preference order)" column is a
+  starting point — add more standalone emulators and cores per system as you populate the JSON.
+  "RA: —" means no RetroArch core for that system (standalone only).
+
+| Platform id | display | options (preference order) | extensions |
+|---|---|---|---|
+| nes | NES | Mesen; RA: mesen, nestopia, fceumm | .nes .fds .unf |
+| snes | SNES | Snes9x; bsnes; RA: snes9x, bsnes | .smc .sfc .fig .bs |
+| gb | Game Boy | SameBoy; RA: gambatte, sameboy | .gb .gbc |
+| gba | GBA | mGBA; NanoBoyAdvance; RA: mgba | .gba .agb |
+| n64 | N64 | ares; Mupen64Plus; RA: mupen64plus_next, parallel_n64 | .n64 .z64 .v64 |
+| nds | DS | melonDS; DeSmuME; RA: melonds, desmume | .nds .dsi |
+| 3ds | 3DS | Azahar; Lime3DS; RA: citra | .3ds .cia .cci .cxi |
+| gamecube | GameCube | Dolphin; RA: dolphin | .iso .gcm .rvz .ciso |
+| wii | Wii | Dolphin; RA: dolphin | .iso .wbfs .rvz .wad |
+| ps1 | PS1 | DuckStation; RA: swanstation, beetle_psx | .cue .chd .bin .m3u .pbp |
+| ps2 | PS2 | PCSX2; Play!; RA: pcsx2 | .iso .chd .cso .bin |
+| psp | PSP | PPSSPP; RA: ppsspp | .iso .cso .chd .pbp |
+| ps3 | PS3 | RPCS3 (RA: —) | .iso .pkg |
+| genesis | Genesis | ares; RA: genesis_plus_gx, blastem | .md .smd .gen .bin |
+| saturn | Saturn | Mednafen; RA: beetle_saturn, kronos | .cue .chd .m3u .ccd |
+| dreamcast | Dreamcast | Flycast; Redream; RA: flycast | .cdi .chd .gdi .cue |
+| arcade | Arcade | MAME; RA: fbneo, mame | .zip |
+| dos | DOS | DOSBox; RA: dosbox_pure | .exe .bat .conf .dosz |
+| wiiu | Wii U | Cemu (RA: —) | .wua .wud .wux .rpx |
+| switch | Switch | Ryujinx (RA: —) | .nsp .xci .nro .nca |
 
 **`SystemDatabase` API:**
 
 ```swift
+/// A selectable way to run a platform, before checking what's installed.
+struct EmulatorOption: Equatable, Hashable {
+    let choice: EmulatorChoice      // .standalone(type) or .retroArchCore(core)
+    let displayName: String         // "Snes9x" or "bsnes (RetroArch)"
+}
+
 final class SystemDatabase {
     init(bundle: Bundle = .resolved)        // loads & validates emulators.json
     func platform(forFolderName name: String) -> Platform?    // PRIMARY signal
     func platforms(forExtension ext: String) -> [Platform]    // secondary signal
-    func emulators(forExtension ext: String) -> [EmulatorType]
-    func primaryEmulator(for platform: Platform) -> EmulatorType?
-    func retroArchCore(for platform: Platform) -> String?
-    func argsTemplate(for emulator: EmulatorType) -> String
+    func emulatorOptions(for platform: Platform) -> [EmulatorOption]   // ordered, all known
+    func argsTemplate(for choice: EmulatorChoice) -> String  // standalone emu template,
+                                                             // or RetroArch's {core} template
     var allRomExtensions: Set<String> { get }
 }
 ```
@@ -305,11 +340,14 @@ final class SystemDatabase {
 
 **Tests (acceptance):**
 - JSON loads under `swift test` (via `Bundle.resolved`).
-- Enum↔JSON completeness check (no drift).
+- Drift check: every `standalone` option and `emulators[]` id maps to a real `EmulatorType`.
 - `platform(forFolderName: "Super Nintendo")` → snes (case-insensitive, alias match).
 - `platforms(forExtension: ".iso")` returns the multiple collision candidates (gamecube, wii,
   ps2, psp, ps3) — proving collisions are surfaced, not hidden.
-- `argsTemplate(for: .retroArch)` contains `{core}`.
+- `emulatorOptions(for: snes)` returns the ordered list including both standalone and core
+  options; `emulatorOptions(for: wiiu)` contains **no** RetroArch option.
+- `argsTemplate(for: .retroArchCore(...))` contains `{core}`; `argsTemplate(for:
+  .standalone(.snes9x))` does not.
 
 **🔍 REVIEW CHECKPOINT 1 — after A1+A2.** Hand back: the model, the parser, the JSON DB, and
 their tests. This validates the foundational data shapes before the scanner/UI depend on them.
@@ -405,6 +443,19 @@ bundles, read `CFBundleExecutable` from `Contents/Info.plist`. Match basenames a
 `EmulatorType.executablePatterns` using the **strict matcher from below**, not loose
 `contains`.
 
+**RetroArch cores must be enumerated too.** When RetroArch is detected (or its path is
+configured), scan its cores directory (`coresDir`, default
+`…/RetroArch.app/Contents/Resources/cores`, also `~/Library/Application Support/RetroArch/cores`)
+for `*_libretro.dylib` files. Expose the set of installed core filenames:
+
+```swift
+func detectAll() -> [EmulatorType: [URL]]   // standalone + the RetroArch app itself
+func installedRetroArchCores() -> Set<String>   // e.g. ["snes9x_libretro.dylib", ...]
+```
+
+A `retroArchCore` option is "available" only when **RetroArch is installed AND that core file
+is present**. This is what keeps the UI from offering cores the user can't actually run.
+
 > **Detection bug to avoid:** the existing `ShortcutFilter` matches emulator patterns with
 > substring `contains`, which false-matches (`"ares"` in "software", `"fuse"` in "confuser",
 > `"b2"`, `"clk"`). For the new detector, match on the **executable basename equal to or
@@ -412,20 +463,39 @@ bundles, read `CFBundleExecutable` from `Contents/Info.plist`. Match basenames a
 > `-emu`, version numbers). Add tests proving `"software"` does not match `ares` and
 > `"RetroArch"` does match `retroarch`.
 
-**`EmulatorConfigManager` spec:** persists the `emulators` block of `config.json` v2 (see §3).
-Per-emulator: `path`, `args`, `enabled`, plus RetroArch's `coresDir` + `corePreferences`.
-Provides resolution: given a `GameEntry`, return the resolved `emulatorPath`, `argsTemplate`,
-and (for RetroArch) the `{core}` path. Injected `ConfigurationManager`.
+**`EmulatorConfigManager` spec:** persists the `emulators` and `emulatorDefaults` blocks of
+`config.json` v2 (see §3). Per-emulator: `path`, `args`, `enabled`, plus RetroArch's `coresDir`.
+Per-platform default choices live in `emulatorDefaults`. Provides the `availableOptions(for:)` /
+`defaultChoice(for:)` resolution above, and given a resolved `EmulatorChoice` returns the
+`emulatorPath`, `argsTemplate`, and (for a `retroArchCore` choice) the `{core}` `.dylib` path
+(from `coresDir` + core filename). Injected `ConfigurationManager` + `EmulatorDetector`.
 
-**Emulator resolution flow** (used by the scan → entry mapping):
-1. Candidate emulators from `database.emulators(forExtension:)`, filtered to enabled.
-2. One match → assign. Multiple → prefer `database.primaryEmulator(for: platform)`, else first
-   enabled. Zero → `emulator = nil` (UI shows "no emulator" badge; entry not generatable).
-3. User can override per-entry in the UI.
+**Emulator resolution flow** (used by the scan → entry mapping). The `EmulatorConfigManager`
+exposes:
 
-**Tests (acceptance):** strict matching (no false positives), detection of an `.app` via a faked
-`Info.plist`, resolution picks primary emulator on extension collision, missing emulator yields
-`nil` not a crash.
+```swift
+// All options for a platform that the user can actually run right now.
+func availableOptions(for platform: Platform) -> [EmulatorOption]
+// The choice to assign automatically: per-platform default if set, else first available.
+func defaultChoice(for platform: Platform) -> EmulatorChoice?
+```
+
+1. Start from `database.emulatorOptions(for: platform)` (ordered, all known).
+2. Filter to **available** = standalone emulator detected + enabled, OR RetroArch installed +
+   that core present + enabled. This is `availableOptions(for:)`.
+3. Assign `defaultChoice(for:)`: the user's **per-platform default** if one is set in config
+   (`emulatorDefaults`, see §3), otherwise the first available option.
+4. Zero available → `emulator = nil` (UI shows a "No emulator installed" badge with guidance;
+   entry isn't generatable until resolved).
+5. The user overrides **per-game** (picks any available option for that ROM) or sets/changes the
+   **per-platform default** (applies to all games of that platform that haven't been overridden).
+
+**Tests (acceptance):** strict matching (no false positives, e.g. "software" ✗ `ares`, "RetroArch"
+✓ `retroarch`); detection of an `.app` via a faked `Info.plist`; RetroArch core enumeration from
+a faked cores dir; `availableOptions` includes both a standalone and an installed core, and
+**excludes** a core whose file is absent; `defaultChoice` honors a configured per-platform
+default and otherwise falls back to first-available; platform with nothing installed yields
+`nil`, not a crash.
 
 **🔍 REVIEW CHECKPOINT 2 — after A3+A4.** Hand back the scanner + emulator subsystems. This is
 where the riskiest heuristics live (platform inference, detection matching); review before the
@@ -559,7 +629,7 @@ dependency-injected and testable**, plus the legacy VDF import bridged to `GameE
   | SteamShortcut | GameEntry |
   |---|---|
   | `appName` | `title` |
-  | `exe` (+ `LaunchCommandParser`) | `emulatorPath`, detected `EmulatorType` |
+  | `exe` (+ `LaunchCommandParser`) | `emulatorPath`, `emulator = .standalone(detectedType)` (a VDF shortcut already points at one concrete executable) |
   | `LaunchOptions` ROM arg | `romPath` |
   | embedded `icon` | `artworkStatus = .cached(...)` if it converts; else `.none` |
 
@@ -593,19 +663,23 @@ tabbed layout. Delete `Views/ShortcutRow.swift` once `GameRow` replaces it.
 - **Scan tab:** ROM directory picker, Scan button, progress, results count ("247 ROMs across 12
   platforms"). Source selector: "Scan ROM Directory" vs "Import from Steam VDF" (persisted).
 - **Game list / `GameRow`:** checkbox; 32×32 artwork thumb (placeholder/spinner/cached);
-  inline-editable title (persists to `gameOverrides` by `stableKey`); platform badge; emulator
-  dropdown (enabled compatible emulators; shows "No emulator" when unresolved); truncated ROM
-  path (full in tooltip); artwork status indicator (✓ cached / ↓ pending / — none / ⚠ failed,
-  click to retry); **ambiguous-platform badge** with a platform picker when
-  `platformAmbiguous`.
+  inline-editable title (persists to `gameOverrides` by `stableKey`); platform badge; **emulator
+  dropdown listing every *available* option for the platform** — each standalone emulator and
+  each installed RetroArch core as a separate, labeled entry (e.g. "Snes9x", "bsnes",
+  "Snes9x (RetroArch)", "bsnes (RetroArch)"); shows "No emulator installed" when none are
+  available; selecting one sets a per-game override. Truncated ROM path (full in tooltip);
+  artwork status indicator (✓ cached / ↓ pending / — none / ⚠ failed, click to retry);
+  **ambiguous-platform badge** with a platform picker when `platformAmbiguous`.
 - **Artwork tab:** "Fetch Missing", "Re-fetch All", per-game search popover (SGDB results as
   thumbs), "Use Local Image…", drag-and-drop onto a row, 256×256 preview. Downloads are
   **bounded-concurrency** and respect the 1 req/s throttle.
 - **Generate tab:** output dir picker, bundle-name preview, "Remove orphaned bundles" toggle,
   progress, summary panel ("Created 12, Updated 3, Skipped 5, Removed 1, 2 errors").
 - **Settings tab:** SGDB API key (secure field) + "Get API Key" link; per-emulator path/args/
-  enabled + "Auto-detect All" + "Add Custom"; RetroArch path/cores dir/per-platform core prefs;
-  artwork cache size + "Clear Cache"; "Import from Steam shortcuts.vdf"; default output dir.
+  enabled + "Auto-detect All" + "Add Custom"; RetroArch path + cores dir; **a per-platform
+  "default emulator" picker** (lists available options for each platform; sets
+  `emulatorDefaults` so all non-overridden games of that platform use it); artwork cache size +
+  "Clear Cache"; "Import from Steam shortcuts.vdf"; default output dir.
 
 **Tests:** UI isn't unit-tested, but the view model driving it is (A8). Acceptance for this
 phase is **manual**: app builds (`xcodebuild build`), launches, scans a sample ROM dir,
@@ -637,17 +711,29 @@ and a manual end-to-end. Update README features.
   "emulators": {
     "Snes9x":   { "path": "/Applications/Snes9x.app", "args": "\"{emulator}\" \"{rom}\"", "enabled": true },
     "RetroArch":{ "path": "/Applications/RetroArch.app", "args": "\"{emulator}\" -L \"{core}\" \"{rom}\"", "enabled": true,
-                  "coresDir": "/Applications/RetroArch.app/Contents/Resources/cores",
-                  "corePreferences": { "snes": "snes9x_libretro.dylib", "gba": "mgba_libretro.dylib" } }
+                  "coresDir": "/Applications/RetroArch.app/Contents/Resources/cores" }
+  },
+  "emulatorDefaults": {
+    "snes": { "type": "standalone",    "emulator": "Snes9x" },
+    "gba":  { "type": "retroArchCore", "core": "mgba_libretro.dylib" }
   },
   "gameOverrides": {
-    "<stableKey>": { "customTitle": "Chrono Trigger", "emulator": "Snes9x", "args": null, "platform": "snes" }
+    "<stableKey>": {
+      "customTitle": "Chrono Trigger",
+      "emulator": { "type": "standalone", "emulator": "Snes9x" },
+      "args": null,
+      "platform": "snes"
+    }
   },
   "lastConversionDate": "2026-06-04T12:00:00Z"
 }
 ```
 
-`gameOverrides` is keyed by `stableKey` (ROM-path hash), **not** UUID or Steam appID.
+- `emulatorDefaults` is keyed by **platform id** and stores the user's per-platform default
+  `EmulatorChoice` (encoded as a tagged object: `standalone`+`emulator`, or `retroArchCore`+
+  `core`). Applied to every game of that platform that has no per-game override.
+- `gameOverrides` is keyed by `stableKey` (ROM-path hash), **not** UUID or Steam appID. Its
+  `emulator` field is a per-game `EmulatorChoice` override (same tagged encoding).
 
 ---
 
