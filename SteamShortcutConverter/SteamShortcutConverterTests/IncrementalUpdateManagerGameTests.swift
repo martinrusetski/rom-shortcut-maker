@@ -154,17 +154,16 @@ final class IncrementalUpdateManagerGameTests: XCTestCase {
         XCTAssertEqual(changes[entry.stableKey]?.changeType, .modified)
     }
 
-    // MARK: - Hash caching
+    // MARK: - File signature
 
-    func testMtimeSizeShortCircuit() throws {
+    func testFileSignatureStableThenChanges() throws {
         let rom = try writeROM("big.iso", bytes: Array(repeating: 0xAB, count: 4096))
-        _ = manager.romFileHash(rom)
-        _ = manager.romFileHash(rom)
-        XCTAssertEqual(manager.romHashComputationCount, 1, "second call should hit the cache")
+        let sig = manager.romFileSignature(rom)
+        XCTAssertNotNil(sig)
+        XCTAssertEqual(manager.romFileSignature(rom), sig, "stable for an unchanged file")
 
-        // Change the file: cache must invalidate and re-hash.
+        // Change the file: a different size must change the signature.
         try Data(Array(repeating: 0xCD, count: 2048)).write(to: rom)
-        _ = manager.romFileHash(rom)
-        XCTAssertEqual(manager.romHashComputationCount, 2)
+        XCTAssertNotEqual(manager.romFileSignature(rom), sig)
     }
 }

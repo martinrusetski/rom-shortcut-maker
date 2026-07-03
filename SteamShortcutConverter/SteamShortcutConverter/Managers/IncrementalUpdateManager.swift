@@ -69,14 +69,6 @@ class IncrementalUpdateManager {
 
     private let fileManager = FileManager.default
 
-    /// Cache of expensive ROM content hashes, keyed by path. Re-hash only when
-    /// the file's mtime or size changes.
-    private var romHashCache: [String: (mtime: Date, size: Int64, hash: String)] = [:]
-
-    /// Number of real (non-cached) ROM hash computations performed — exposed for
-    /// tests to prove the mtime/size short-circuit works.
-    private(set) var romHashComputationCount = 0
-
     // MARK: - Change Detection
     
     /// Compare current shortcuts against previous conversion state
@@ -342,11 +334,12 @@ class IncrementalUpdateManager {
     func computeChangeSignature(for entry: GameEntry) -> String {
         var parts: [String] = []
         parts.append(entry.launchPath.standardizedFileURL.path)
-        parts.append(romFileHash(entry.romPath) ?? "nohash")
-        // Hash member files (a .cue's tracks, an .m3u's discs) so a re-dumped
-        // track is detected even though the entry-point file is unchanged.
+        parts.append(romFileSignature(entry.romPath) ?? "nosig")
+        // Signature of member files (a .cue's tracks, an .m3u's discs) so a
+        // re-dumped track is detected even though the entry-point file is
+        // unchanged.
         for member in entry.additionalFiles.sorted(by: { $0.path < $1.path }) {
-            parts.append(romFileHash(member) ?? "")
+            parts.append(romFileSignature(member) ?? "")
         }
         // Include the emulator choice itself: switching between two RetroArch
         // cores keeps the same binary path and args template, so the choice is the
@@ -364,25 +357,18 @@ class IncrementalUpdateManager {
         return SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
     }
 
-    /// Content SHA256 of a ROM file, cached by (path, mtime, size) so multi-GB
-    /// ISOs aren't re-hashed on every scan.
-    func romFileHash(_ url: URL) -> String? {
-        let path = url.path
-        guard let attributes = try? fileManager.attributesOfItem(atPath: path),
+    /// A cheap change-detection signature for a ROM file: its size and
+    /// modification time. We deliberately do NOT hash file contents — a replaced
+    /// or re-dumped ROM changes its size and/or mtime, and full-content SHA256 of
+    /// multi-GB ISOs blocked the main thread for 10+ seconds (beachball) during
+    /// generation. Returns nil if the file can't be stat'd.
+    func romFileSignature(_ url: URL) -> String? {
+        guard let attributes = try? fileManager.attributesOfItem(atPath: url.path),
               let size = (attributes[.size] as? NSNumber)?.int64Value,
               let mtime = attributes[.modificationDate] as? Date else {
             return nil
         }
-
-        if let cached = romHashCache[path], cached.size == size, cached.mtime == mtime {
-            return cached.hash
-        }
-
-        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
-        let hash = SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
-        romHashCache[path] = (mtime, size, hash)
-        romHashComputationCount += 1
-        return hash
+        return "\(size)-\(mtime.timeIntervalSince1970)"
     }
 
     /// Build a `ConvertedGame` record for a generated bundle.
