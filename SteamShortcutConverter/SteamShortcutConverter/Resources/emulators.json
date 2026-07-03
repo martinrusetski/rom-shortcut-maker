@@ -412,7 +412,7 @@
     { "id": "Redream",        "argsTemplate": "\"{emulator}\" \"{rom}\"" },
     { "id": "MAME",           "argsTemplate": "\"{emulator}\" \"{rom}\"" },
     { "id": "DOSBox",         "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "Cemu",           "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "Cemu",           "argsTemplate": "\"{emulator}\" -g \"{rom}\"" },
     { "id": "Ryujinx",        "argsTemplate": "\"{emulator}\" \"{rom}\"" },
     { "id": "VICE",            "argsTemplate": "\"{emulator}\" \"{rom}\"" },
     { "id": "FS-UAE",          "argsTemplate": "\"{emulator}\" \"{rom}\"" },

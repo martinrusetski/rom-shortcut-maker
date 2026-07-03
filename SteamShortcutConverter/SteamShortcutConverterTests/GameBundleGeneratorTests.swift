@@ -30,8 +30,9 @@ final class GameBundleGeneratorTests: XCTestCase {
     // MARK: - Template expansion
 
     func testStandaloneTemplateExpansion() {
+        // Non-.app CLI binary: exec'd directly with {emulator} expanded in place.
         let command = generator.buildLaunchCommand(
-            executable: URL(fileURLWithPath: "/Applications/Snes9x/bin/snes9x"),
+            emulator: URL(fileURLWithPath: "/Applications/Snes9x/bin/snes9x"),
             argsTemplate: "\"{emulator}\" \"{rom}\"",
             rom: URL(fileURLWithPath: "/ROMs/game.sfc"),
             core: nil
@@ -40,8 +41,9 @@ final class GameBundleGeneratorTests: XCTestCase {
     }
 
     func testRetroArchTemplateExpansion() {
+        // Non-.app CLI binary path keeps the direct-exec form.
         let command = generator.buildLaunchCommand(
-            executable: URL(fileURLWithPath: "/Applications/RetroArch/bin/retroarch"),
+            emulator: URL(fileURLWithPath: "/Applications/RetroArch/bin/retroarch"),
             argsTemplate: "\"{emulator}\" -L \"{core}\" \"{rom}\"",
             rom: URL(fileURLWithPath: "/ROMs/game.sfc"),
             core: URL(fileURLWithPath: "/cores/snes9x_libretro.dylib")
@@ -49,6 +51,37 @@ final class GameBundleGeneratorTests: XCTestCase {
         XCTAssertEqual(
             command,
             "'/Applications/RetroArch/bin/retroarch' '-L' '/cores/snes9x_libretro.dylib' '/ROMs/game.sfc'"
+        )
+    }
+
+    // MARK: - .app emulators launch via LaunchServices (open -a)
+
+    func testAppBundleLaunchesViaOpen() {
+        // A real .app emulator must be launched through `open -a` so it gets its
+        // own app identity, not by exec'ing the inner Mach-O from our bundle.
+        let command = generator.buildLaunchCommand(
+            emulator: URL(fileURLWithPath: "/Applications/RetroArch.app"),
+            argsTemplate: "\"{emulator}\" -L \"{core}\" \"{rom}\"",
+            rom: URL(fileURLWithPath: "/ROMs/Crazy Taxi 2.chd"),
+            core: URL(fileURLWithPath: "/cores/flycast_libretro.dylib")
+        )
+        XCTAssertEqual(
+            command,
+            "'/usr/bin/open' '-a' '/Applications/RetroArch.app' '--args' '-L' '/cores/flycast_libretro.dylib' '/ROMs/Crazy Taxi 2.chd'"
+        )
+    }
+
+    func testAppBundleWithBarePositionalRom() {
+        // Cemu-style template ("{emulator}" -g "{rom}") through open -a.
+        let command = generator.buildLaunchCommand(
+            emulator: URL(fileURLWithPath: "/Applications/Cemu.app"),
+            argsTemplate: "\"{emulator}\" -g \"{rom}\"",
+            rom: URL(fileURLWithPath: "/ROMs/BOTW.wua"),
+            core: nil
+        )
+        XCTAssertEqual(
+            command,
+            "'/usr/bin/open' '-a' '/Applications/Cemu.app' '--args' '-g' '/ROMs/BOTW.wua'"
         )
     }
 

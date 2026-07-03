@@ -458,9 +458,8 @@ class DefaultAppBundleGenerator: AppBundleGenerator {
         )
 
         // Build the launch command ONCE from structured pieces (single escaping).
-        let executable = resolveExecutable(game.executablePath)
         let command = buildLaunchCommand(
-            executable: executable,
+            emulator: game.executablePath,
             argsTemplate: game.argsTemplate,
             rom: game.romPath,
             core: game.corePath
@@ -512,16 +511,43 @@ class DefaultAppBundleGenerator: AppBundleGenerator {
 
     /// Expand `{emulator}`/`{rom}`/`{core}` in the args template and produce a
     /// single, correctly shell-quoted command line.
-    func buildLaunchCommand(executable: URL, argsTemplate: String, rom: URL, core: URL?) -> String {
+    ///
+    /// `.app` emulators are launched via LaunchServices (`open -a`), NOT by
+    /// exec'ing their inner Mach-O directly. Exec'ing the inner binary runs the
+    /// emulator inside the process LaunchServices registered as *our* bundle, so
+    /// AppKit binds the emulator's window to the wrong app identity. Some
+    /// emulators (RetroArch) then hit "terminate after last window closed" and
+    /// quit instantly on launch. `open -a` gives the emulator its own identity.
+    /// CLI binaries have no such identity and are exec'd directly.
+    func buildLaunchCommand(emulator: URL, argsTemplate: String, rom: URL, core: URL?) -> String {
         let tokens = Self.tokenizeTemplate(argsTemplate)
-        let substituted = tokens.map { token -> String in
+
+        func substituteData(_ token: String) -> String {
             var value = token
-            value = value.replacingOccurrences(of: "{emulator}", with: executable.path)
             value = value.replacingOccurrences(of: "{rom}", with: rom.path)
             if let core {
                 value = value.replacingOccurrences(of: "{core}", with: core.path)
             }
             return value
+        }
+
+        if emulator.pathExtension.lowercased() == "app" {
+            // Drop the {emulator} placeholder; remaining tokens are the app's args.
+            let argTokens = tokens
+                .filter { $0 != "{emulator}" }
+                .map(substituteData)
+            var parts = ["/usr/bin/open", "-a", emulator.path]
+            if !argTokens.isEmpty {
+                parts.append("--args")
+                parts.append(contentsOf: argTokens)
+            }
+            return parts.map { Self.shellQuote($0) }.joined(separator: " ")
+        }
+
+        // CLI binary: expand {emulator} in place and exec directly.
+        let executable = resolveExecutable(emulator)
+        let substituted = tokens.map { token -> String in
+            substituteData(token.replacingOccurrences(of: "{emulator}", with: executable.path))
         }
         return substituted.map { Self.shellQuote($0) }.joined(separator: " ")
     }
