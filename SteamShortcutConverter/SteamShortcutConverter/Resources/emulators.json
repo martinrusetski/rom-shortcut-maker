@@ -1,0 +1,247 @@
+{
+  "version": 1,
+  "platforms": [
+    {
+      "id": "nes",
+      "displayName": "NES",
+      "folderAliases": ["nes", "famicom", "fc", "nintendo entertainment system"],
+      "romExtensions": [".nes", ".fds", ".unf", ".unif"],
+      "emulatorOptions": [
+        { "type": "standalone",    "emulator": "Mesen" },
+        { "type": "retroArchCore", "core": "mesen_libretro.dylib",    "displayName": "Mesen (RetroArch)" },
+        { "type": "retroArchCore", "core": "nestopia_libretro.dylib", "displayName": "Nestopia (RetroArch)" },
+        { "type": "retroArchCore", "core": "fceumm_libretro.dylib",   "displayName": "FCEUmm (RetroArch)" }
+      ]
+    },
+    {
+      "id": "snes",
+      "displayName": "SNES",
+      "folderAliases": ["snes", "super nintendo", "sfc", "super famicom", "super nintendo entertainment system"],
+      "romExtensions": [".smc", ".sfc", ".fig", ".bs", ".swc", ".st"],
+      "emulatorOptions": [
+        { "type": "standalone",    "emulator": "Snes9x" },
+        { "type": "standalone",    "emulator": "bsnes" },
+        { "type": "retroArchCore", "core": "snes9x_libretro.dylib", "displayName": "Snes9x (RetroArch)" },
+        { "type": "retroArchCore", "core": "bsnes_libretro.dylib",  "displayName": "bsnes (RetroArch)" }
+      ]
+    },
+    {
+      "id": "gb",
+      "displayName": "Game Boy",
+      "folderAliases": ["gb", "gbc", "game boy", "gameboy", "game boy color", "gameboy color"],
+      "romExtensions": [".gb", ".gbc", ".sgb"],
+      "emulatorOptions": [
+        { "type": "standalone",    "emulator": "SameBoy" },
+        { "type": "retroArchCore", "core": "gambatte_libretro.dylib", "displayName": "Gambatte (RetroArch)" },
+        { "type": "retroArchCore", "core": "sameboy_libretro.dylib",  "displayName": "SameBoy (RetroArch)" }
+      ]
+    },
+    {
+      "id": "gba",
+      "displayName": "GBA",
+      "folderAliases": ["gba", "game boy advance", "gameboy advance"],
+      "romExtensions": [".gba", ".agb", ".srl"],
+      "emulatorOptions": [
+        { "type": "standalone",    "emulator": "mGBA" },
+        { "type": "standalone",    "emulator": "NanoBoyAdvance" },
+        { "type": "retroArchCore", "core": "mgba_libretro.dylib", "displayName": "mGBA (RetroArch)" }
+      ]
+    },
+    {
+      "id": "n64",
+      "displayName": "N64",
+      "folderAliases": ["n64", "nintendo 64", "nintendo64"],
+      "romExtensions": [".n64", ".z64", ".v64", ".ndd"],
+      "emulatorOptions": [
+        { "type": "standalone",    "emulator": "ares" },
+        { "type": "standalone",    "emulator": "Mupen64Plus" },
+        { "type": "retroArchCore", "core": "mupen64plus_next_libretro.dylib", "displayName": "Mupen64Plus-Next (RetroArch)" },
+        { "type": "retroArchCore", "core": "parallel_n64_libretro.dylib",     "displayName": "ParaLLEl N64 (RetroArch)" }
+      ]
+    },
+    {
+      "id": "nds",
+      "displayName": "DS",
+      "folderAliases": ["nds", "ds", "nintendo ds", "nintendods"],
+      "romExtensions": [".nds", ".dsi", ".ids"],
+      "emulatorOptions": [
+        { "type": "standalone",    "emulator": "melonDS" },
+        { "type": "standalone",    "emulator": "DeSmuME" },
+        { "type": "retroArchCore", "core": "melonds_libretro.dylib", "displayName": "melonDS (RetroArch)" },
+        { "type": "retroArchCore", "core": "desmume_libretro.dylib", "displayName": "DeSmuME (RetroArch)" }
+      ]
+    },
+    {
+      "id": "3ds",
+      "displayName": "3DS",
+      "folderAliases": ["3ds", "nintendo 3ds", "n3ds"],
+      "romExtensions": [".3ds", ".cia", ".cci", ".cxi", ".3dsx"],
+      "emulatorOptions": [
+        { "type": "standalone",    "emulator": "Azahar" },
+        { "type": "standalone",    "emulator": "Lime3DS" },
+        { "type": "retroArchCore", "core": "citra_libretro.dylib", "displayName": "Citra (RetroArch)" }
+      ]
+    },
+    {
+      "id": "gamecube",
+      "displayName": "GameCube",
+      "folderAliases": ["gamecube", "gc", "ngc", "nintendo gamecube"],
+      "romExtensions": [".iso", ".gcm", ".rvz", ".ciso", ".gcz"],
+      "emulatorOptions": [
+        { "type": "standalone",    "emulator": "Dolphin" },
+        { "type": "retroArchCore", "core": "dolphin_libretro.dylib", "displayName": "Dolphin (RetroArch)" }
+      ]
+    },
+    {
+      "id": "wii",
+      "displayName": "Wii",
+      "folderAliases": ["wii", "nintendo wii"],
+      "romExtensions": [".iso", ".wbfs", ".rvz", ".wad", ".gcz"],
+      "emulatorOptions": [
+        { "type": "standalone",    "emulator": "Dolphin" },
+        { "type": "retroArchCore", "core": "dolphin_libretro.dylib", "displayName": "Dolphin (RetroArch)" }
+      ]
+    },
+    {
+      "id": "ps1",
+      "displayName": "PS1",
+      "folderAliases": ["ps1", "psx", "playstation", "playstation 1", "psone", "sony playstation"],
+      "romExtensions": [".cue", ".chd", ".bin", ".m3u", ".pbp", ".ecm"],
+      "emulatorOptions": [
+        { "type": "standalone",    "emulator": "DuckStation" },
+        { "type": "retroArchCore", "core": "swanstation_libretro.dylib", "displayName": "SwanStation (RetroArch)" },
+        { "type": "retroArchCore", "core": "beetle_psx_libretro.dylib",  "displayName": "Beetle PSX (RetroArch)" }
+      ]
+    },
+    {
+      "id": "ps2",
+      "displayName": "PS2",
+      "folderAliases": ["ps2", "playstation 2", "sony playstation 2"],
+      "romExtensions": [".iso", ".chd", ".cso", ".bin"],
+      "emulatorOptions": [
+        { "type": "standalone",    "emulator": "PCSX2" },
+        { "type": "standalone",    "emulator": "Play!" },
+        { "type": "retroArchCore", "core": "pcsx2_libretro.dylib", "displayName": "PCSX2 (RetroArch)" }
+      ]
+    },
+    {
+      "id": "psp",
+      "displayName": "PSP",
+      "folderAliases": ["psp", "playstation portable"],
+      "romExtensions": [".iso", ".cso", ".chd", ".pbp"],
+      "emulatorOptions": [
+        { "type": "standalone",    "emulator": "PPSSPP" },
+        { "type": "retroArchCore", "core": "ppsspp_libretro.dylib", "displayName": "PPSSPP (RetroArch)" }
+      ]
+    },
+    {
+      "id": "ps3",
+      "displayName": "PS3",
+      "folderAliases": ["ps3", "playstation 3", "sony playstation 3"],
+      "romExtensions": [".iso", ".pkg"],
+      "emulatorOptions": [
+        { "type": "standalone", "emulator": "RPCS3" }
+      ]
+    },
+    {
+      "id": "genesis",
+      "displayName": "Genesis",
+      "folderAliases": ["genesis", "megadrive", "mega drive", "md", "sega genesis", "sega megadrive", "sega mega drive"],
+      "romExtensions": [".md", ".smd", ".gen", ".bin", ".68k"],
+      "emulatorOptions": [
+        { "type": "standalone",    "emulator": "ares" },
+        { "type": "retroArchCore", "core": "genesis_plus_gx_libretro.dylib", "displayName": "Genesis Plus GX (RetroArch)" },
+        { "type": "retroArchCore", "core": "blastem_libretro.dylib",         "displayName": "BlastEm (RetroArch)" }
+      ]
+    },
+    {
+      "id": "saturn",
+      "displayName": "Saturn",
+      "folderAliases": ["saturn", "sega saturn"],
+      "romExtensions": [".cue", ".chd", ".m3u", ".ccd", ".mds"],
+      "emulatorOptions": [
+        { "type": "standalone",    "emulator": "Mednafen" },
+        { "type": "retroArchCore", "core": "beetle_saturn_libretro.dylib", "displayName": "Beetle Saturn (RetroArch)" },
+        { "type": "retroArchCore", "core": "kronos_libretro.dylib",        "displayName": "Kronos (RetroArch)" }
+      ]
+    },
+    {
+      "id": "dreamcast",
+      "displayName": "Dreamcast",
+      "folderAliases": ["dreamcast", "dc", "sega dreamcast"],
+      "romExtensions": [".cdi", ".chd", ".gdi", ".cue"],
+      "emulatorOptions": [
+        { "type": "standalone",    "emulator": "Flycast" },
+        { "type": "standalone",    "emulator": "Redream" },
+        { "type": "retroArchCore", "core": "flycast_libretro.dylib", "displayName": "Flycast (RetroArch)" }
+      ]
+    },
+    {
+      "id": "arcade",
+      "displayName": "Arcade",
+      "folderAliases": ["arcade", "mame", "fbneo", "fba", "neogeo", "neo geo"],
+      "romExtensions": [".zip", ".chd"],
+      "emulatorOptions": [
+        { "type": "standalone",    "emulator": "MAME" },
+        { "type": "retroArchCore", "core": "fbneo_libretro.dylib", "displayName": "FinalBurn Neo (RetroArch)" },
+        { "type": "retroArchCore", "core": "mame_libretro.dylib",  "displayName": "MAME (RetroArch)" }
+      ]
+    },
+    {
+      "id": "dos",
+      "displayName": "DOS",
+      "folderAliases": ["dos", "msdos", "ms-dos"],
+      "romExtensions": [".exe", ".bat", ".conf", ".dosz"],
+      "emulatorOptions": [
+        { "type": "standalone",    "emulator": "DOSBox" },
+        { "type": "retroArchCore", "core": "dosbox_pure_libretro.dylib", "displayName": "DOSBox Pure (RetroArch)" }
+      ]
+    },
+    {
+      "id": "wiiu",
+      "displayName": "Wii U",
+      "folderAliases": ["wiiu", "wii u"],
+      "romExtensions": [".wua", ".wud", ".wux", ".rpx"],
+      "emulatorOptions": [
+        { "type": "standalone", "emulator": "Cemu" }
+      ]
+    },
+    {
+      "id": "switch",
+      "displayName": "Switch",
+      "folderAliases": ["switch", "nintendo switch", "nsw"],
+      "romExtensions": [".nsp", ".xci", ".nro", ".nca"],
+      "emulatorOptions": [
+        { "type": "standalone", "emulator": "Ryujinx" }
+      ]
+    }
+  ],
+  "emulators": [
+    { "id": "Mesen",          "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "Snes9x",         "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "bsnes",          "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "SameBoy",        "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "mGBA",           "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "NanoBoyAdvance", "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "ares",           "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "Mupen64Plus",    "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "melonDS",        "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "DeSmuME",        "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "Azahar",         "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "Lime3DS",        "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "Dolphin",        "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "DuckStation",    "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "PCSX2",          "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "Play!",          "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "PPSSPP",         "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "RPCS3",          "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "Mednafen",       "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "Flycast",        "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "Redream",        "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "MAME",           "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "DOSBox",         "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "Cemu",           "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "Ryujinx",        "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "RetroArch",      "argsTemplate": "\"{emulator}\" -L \"{core}\" \"{rom}\"" }
+  ]
+}

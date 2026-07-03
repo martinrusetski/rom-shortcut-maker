@@ -26,7 +26,12 @@ let package = Package(
             name: "SteamShortcutConverter",
             path: "SteamShortcutConverter",
             exclude: [
-                "SteamShortcutConverterApp.swift"
+                "SteamShortcutConverterApp.swift",
+                "Info.plist",
+                "Assets.xcassets"
+            ],
+            resources: [
+                .process("Resources")
             ]),
         .testTarget(
             name: "SteamShortcutConverterTests",
