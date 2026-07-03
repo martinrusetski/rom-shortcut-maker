@@ -21,6 +21,8 @@ protocol AppDiscovering {
     func files(in directory: URL, withExtension ext: String) -> [URL]
     /// `CFBundleExecutable` from an `.app` bundle's `Info.plist`, if present.
     func infoPlistExecutable(for appBundle: URL) -> String?
+    /// UTF-8 contents of a text file, or nil if it doesn't exist / can't be read.
+    func readText(at url: URL) -> String?
 }
 
 final class DefaultAppDiscovering: AppDiscovering {
@@ -47,6 +49,10 @@ final class DefaultAppDiscovering: AppDiscovering {
               let plist = try? PropertyListSerialization.propertyList(from: data, format: nil),
               let dict = plist as? [String: Any] else { return nil }
         return dict["CFBundleExecutable"] as? String
+    }
+
+    func readText(at url: URL) -> String? {
+        try? String(contentsOf: url, encoding: .utf8)
     }
 
     private func contents(of directory: URL, keys: [URLResourceKey] = []) -> [URL] {
@@ -102,6 +108,17 @@ enum EmulatorMatcher {
     }
 }
 
+// MARK: - InstalledCore
+
+/// A libretro core found on disk, with metadata read from its RetroArch `.info`
+/// file so it can be mapped to a platform without hardcoding filenames.
+struct InstalledCore: Equatable {
+    let filename: String     // e.g. "mednafen_saturn_libretro.dylib"
+    let url: URL             // full path to the .dylib
+    let displayName: String  // from .info (display_name / corename), else derived
+    let systemId: String?    // from .info `systemid`, e.g. "sega_saturn"
+}
+
 // MARK: - EmulatorDetector
 
 final class EmulatorDetector {
@@ -115,13 +132,16 @@ final class EmulatorDetector {
     private let binSearchDirectories: [URL]
     /// Extra RetroArch cores directories (beyond a detected RetroArch.app).
     private let extraCoreDirectories: [URL]
+    /// Extra RetroArch core-info directories (beyond a detected RetroArch.app).
+    private let extraInfoDirectories: [URL]
 
     init(
         database: SystemDatabase,
         fs: AppDiscovering = DefaultAppDiscovering(),
         appSearchDirectories: [URL]? = nil,
         binSearchDirectories: [URL]? = nil,
-        extraCoreDirectories: [URL]? = nil
+        extraCoreDirectories: [URL]? = nil,
+        extraInfoDirectories: [URL]? = nil
     ) {
         self.database = database
         self.fs = fs
@@ -136,6 +156,9 @@ final class EmulatorDetector {
         ]
         self.extraCoreDirectories = extraCoreDirectories ?? [
             home.appendingPathComponent("Library/Application Support/RetroArch/cores")
+        ]
+        self.extraInfoDirectories = extraInfoDirectories ?? [
+            home.appendingPathComponent("Library/Application Support/RetroArch/info")
         ]
     }
 
@@ -169,32 +192,78 @@ final class EmulatorDetector {
         return result
     }
 
-    /// The set of installed RetroArch core filenames (e.g. "snes9x_libretro.dylib").
-    func installedRetroArchCores() -> Set<String> {
-        var cores: Set<String> = []
+    /// The installed libretro cores (`*_libretro.dylib`), each mapped to its
+    /// platform via the sibling RetroArch `.info` metadata file.
+    func installedCores() -> [InstalledCore] {
+        let infoDirectories = self.infoDirectories()
+        var cores: [InstalledCore] = []
+        var seen = Set<String>()
         for directory in coreDirectories() {
             for dylib in fs.files(in: directory, withExtension: "dylib") {
-                let name = dylib.lastPathComponent
-                if name.hasSuffix("_libretro.dylib") {
-                    cores.insert(name)
-                }
+                let filename = dylib.lastPathComponent
+                guard filename.hasSuffix("_libretro.dylib"), seen.insert(filename).inserted else { continue }
+                let base = String(filename.dropLast(".dylib".count))   // "<name>_libretro"
+                let info = readCoreInfo(base: base, in: infoDirectories)
+                cores.append(InstalledCore(
+                    filename: filename,
+                    url: dylib,
+                    displayName: info.displayName ?? prettyCoreName(base),
+                    systemId: info.systemId
+                ))
             }
         }
         return cores
     }
 
+    // MARK: - Core info
+
+    private func readCoreInfo(base: String, in directories: [URL]) -> (displayName: String?, systemId: String?) {
+        for directory in directories {
+            let infoURL = directory.appendingPathComponent("\(base).info")
+            guard let text = fs.readText(at: infoURL) else { continue }
+            let display = infoField("display_name", in: text) ?? infoField("corename", in: text)
+            let systemId = infoField("systemid", in: text)
+            return (display, systemId)
+        }
+        return (nil, nil)
+    }
+
+    private func infoField(_ key: String, in text: String) -> String? {
+        let pattern = "(?m)^\\s*\(key)\\s*=\\s*\"([^\"]*)\""
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let ns = text as NSString
+        guard let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)),
+              match.numberOfRanges > 1 else { return nil }
+        let value = ns.substring(with: match.range(at: 1))
+        return value.isEmpty ? nil : value
+    }
+
+    private func prettyCoreName(_ base: String) -> String {
+        base.replacingOccurrences(of: "_libretro", with: "")
+            .replacingOccurrences(of: "_", with: " ")
+    }
+
     /// Candidate RetroArch cores directories: the `cores` folder of any detected
     /// RetroArch.app, plus the configured extra directories.
     private func coreDirectories() -> [URL] {
+        directoriesForRetroArchSubfolder("cores", extras: extraCoreDirectories)
+    }
+
+    /// Candidate RetroArch core-info directories.
+    private func infoDirectories() -> [URL] {
+        directoriesForRetroArchSubfolder("info", extras: extraInfoDirectories)
+    }
+
+    private func directoriesForRetroArchSubfolder(_ subfolder: String, extras: [URL]) -> [URL] {
         var directories: [URL] = []
         for retroArchURL in detectAll()[.retroArch] ?? [] {
             if retroArchURL.pathExtension.lowercased() == "app" {
-                directories.append(retroArchURL.appendingPathComponent("Contents/Resources/cores"))
+                directories.append(retroArchURL.appendingPathComponent("Contents/Resources/\(subfolder)"))
             } else {
-                directories.append(retroArchURL.deletingLastPathComponent().appendingPathComponent("cores"))
+                directories.append(retroArchURL.deletingLastPathComponent().appendingPathComponent(subfolder))
             }
         }
-        directories.append(contentsOf: extraCoreDirectories)
+        directories.append(contentsOf: extras)
         return directories
     }
 }

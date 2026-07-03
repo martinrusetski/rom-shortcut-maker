@@ -105,14 +105,22 @@ final class SystemDatabaseTests: XCTestCase {
 
     // MARK: - Emulator options
 
-    func testSnesOptionsIncludeStandaloneAndCores() {
+    func testSnesStandaloneOptions() {
         let snes = Platform(id: "snes", displayName: "SNES")
         let options = database.emulatorOptions(for: snes)
+        // Cores are now discovered dynamically from installed .info files, so the
+        // static DB carries only standalone emulators.
         XCTAssertTrue(options.contains { $0.choice == .standalone(.snes9x) })
         XCTAssertTrue(options.contains { $0.choice == .standalone(.bsnes) })
-        XCTAssertTrue(options.contains { $0.choice == .retroArchCore(core: "snes9x_libretro.dylib") })
-        // Order = preference; first should be a standalone (Snes9x).
         XCTAssertEqual(options.first?.choice, .standalone(.snes9x))
+        XCTAssertFalse(options.contains { if case .retroArchCore = $0.choice { return true }; return false })
+    }
+
+    func testLibretroSystemsMapping() {
+        XCTAssertEqual(database.libretroSystems(for: Platform(id: "saturn", displayName: "Saturn")), ["sega_saturn"])
+        XCTAssertEqual(database.libretroSystems(for: Platform(id: "snes", displayName: "SNES")), ["super_nes"])
+        XCTAssertEqual(database.libretroSystems(for: Platform(id: "ps1", displayName: "PS1")), ["playstation"])
+        XCTAssertTrue(database.libretroSystems(for: Platform(id: "switch", displayName: "Switch")).isEmpty)
     }
 
     func testWiiUHasNoRetroArchOption() {

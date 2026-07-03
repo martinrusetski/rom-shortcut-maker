@@ -29,11 +29,16 @@ final class EmulatorConfigManagerTests: XCTestCase {
         let snes9x = appsDir.appendingPathComponent("Snes9x.app")
         fs.appsByDir[appsDir.path] = [retroArch, snes9x]
         let coresDir = retroArch.appendingPathComponent("Contents/Resources/cores")
+        let infoDir = retroArch.appendingPathComponent("Contents/Resources/info")
         fs.filesByDir[coresDir.path] = [coresDir.appendingPathComponent("snes9x_libretro.dylib")]
+        fs.fileContents[infoDir.appendingPathComponent("snes9x_libretro.info").path] = """
+        display_name = "Nintendo - SNES (Snes9x)"
+        systemid = "super_nes"
+        """
         return EmulatorDetector(
             database: database, fs: fs,
             appSearchDirectories: [appsDir], binSearchDirectories: [binDir],
-            extraCoreDirectories: []
+            extraCoreDirectories: [], extraInfoDirectories: []
         )
     }
 
@@ -41,7 +46,7 @@ final class EmulatorConfigManagerTests: XCTestCase {
         EmulatorDetector(
             database: database, fs: FakeAppDiscovering(),
             appSearchDirectories: [appsDir], binSearchDirectories: [binDir],
-            extraCoreDirectories: []
+            extraCoreDirectories: [], extraInfoDirectories: []
         )
     }
 

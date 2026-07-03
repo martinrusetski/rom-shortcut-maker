@@ -74,6 +74,7 @@ final class SystemDatabase {
         let folderAliases: [String]
         let romExtensions: [String]
         let emulatorOptions: [OptionRecord]
+        let libretroSystems: [String]?
     }
 
     private struct OptionRecord: Decodable {
@@ -223,6 +224,12 @@ final class SystemDatabase {
         case .retroArchCore:
             return emulatorTemplates["RetroArch"] ?? "\"{emulator}\" -L \"{core}\" \"{rom}\""
         }
+    }
+
+    /// The RetroArch libretro `systemid` tokens that map to a platform. Installed
+    /// cores are matched to platforms by these (see EmulatorConfigManager).
+    func libretroSystems(for platform: Platform) -> [String] {
+        platformRecords.first(where: { $0.id == platform.id })?.libretroSystems ?? []
     }
 
     /// The union of all ROM extensions known to any platform (normalized,

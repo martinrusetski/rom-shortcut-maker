@@ -14,6 +14,7 @@ final class FakeAppDiscovering: AppDiscovering {
     var executablesByDir: [String: [URL]] = [:]
     var filesByDir: [String: [URL]] = [:]
     var bundleExecutables: [String: String] = [:]   // app path -> CFBundleExecutable
+    var fileContents: [String: String] = [:]         // file path -> text contents
 
     func appBundles(in directory: URL) -> [URL] { appsByDir[directory.path] ?? [] }
     func executables(in directory: URL) -> [URL] { executablesByDir[directory.path] ?? [] }
@@ -21,6 +22,7 @@ final class FakeAppDiscovering: AppDiscovering {
         (filesByDir[directory.path] ?? []).filter { $0.pathExtension.lowercased() == ext.lowercased() }
     }
     func infoPlistExecutable(for appBundle: URL) -> String? { bundleExecutables[appBundle.path] }
+    func readText(at url: URL) -> String? { fileContents[url.path] }
 }
 
 final class EmulatorDetectorTests: XCTestCase {
@@ -94,23 +96,32 @@ final class EmulatorDetectorTests: XCTestCase {
         XCTAssertEqual(detector.detectAll()[.mgba]?.first?.lastPathComponent, "mgba")
     }
 
-    // MARK: - Core enumeration
+    // MARK: - Core enumeration (via .info metadata)
 
-    func testInstalledRetroArchCores() {
+    func testInstalledCoresMapViaInfoFiles() {
         let fs = FakeAppDiscovering()
         let retroArch = appsDir.appendingPathComponent("RetroArch.app")
         fs.appsByDir[appsDir.path] = [retroArch]
         let coresDir = retroArch.appendingPathComponent("Contents/Resources/cores")
+        let infoDir = retroArch.appendingPathComponent("Contents/Resources/info")
         fs.filesByDir[coresDir.path] = [
-            coresDir.appendingPathComponent("snes9x_libretro.dylib"),
-            coresDir.appendingPathComponent("bsnes_libretro.dylib"),
-            coresDir.appendingPathComponent("random.dylib")           // not a core
+            coresDir.appendingPathComponent("mednafen_saturn_libretro.dylib"),
+            coresDir.appendingPathComponent("random.dylib")           // not a libretro core
         ]
-        let detector = makeDetector(fs: fs)
-        let cores = detector.installedRetroArchCores()
-        XCTAssertTrue(cores.contains("snes9x_libretro.dylib"))
-        XCTAssertTrue(cores.contains("bsnes_libretro.dylib"))
-        XCTAssertFalse(cores.contains("random.dylib"))
+        fs.fileContents[infoDir.appendingPathComponent("mednafen_saturn_libretro.info").path] = """
+        display_name = "Sega - Saturn (Beetle Saturn)"
+        systemid = "sega_saturn"
+        """
+        let detector = EmulatorDetector(
+            database: database, fs: fs,
+            appSearchDirectories: [appsDir], binSearchDirectories: [],
+            extraCoreDirectories: [], extraInfoDirectories: [])
+
+        let cores = detector.installedCores()
+        XCTAssertEqual(cores.count, 1, "only *_libretro.dylib files count")
+        XCTAssertEqual(cores.first?.filename, "mednafen_saturn_libretro.dylib")
+        XCTAssertEqual(cores.first?.systemId, "sega_saturn")
+        XCTAssertEqual(cores.first?.displayName, "Sega - Saturn (Beetle Saturn)")
     }
 
     // MARK: - Real Info.plist parsing (DefaultAppDiscovering)

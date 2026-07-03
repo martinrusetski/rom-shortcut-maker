@@ -83,7 +83,8 @@ final class MainViewModelTests: XCTestCase {
         ]
         let detector = EmulatorDetector(
             database: database, fs: fs,
-            appSearchDirectories: [appsDir], binSearchDirectories: [], extraCoreDirectories: [])
+            appSearchDirectories: [appsDir], binSearchDirectories: [],
+            extraCoreDirectories: [], extraInfoDirectories: [])
         let emulatorConfig = EmulatorConfigManager(
             database: database, detector: detector, store: InMemoryEmulatorConfigStore())
         let viewModel = MainViewModel(

@@ -112,7 +112,7 @@ final class EmulatorConfigManager {
 
     private var config: EmulatorConfigData
     private var detected: [EmulatorType: [URL]] = [:]
-    private var installedCores: Set<String> = []
+    private var installedCores: [InstalledCore] = []
     private var didRefresh = false
 
     init(database: SystemDatabase, detector: EmulatorDetector, store: EmulatorConfigStore) {
@@ -128,7 +128,7 @@ final class EmulatorConfigManager {
     /// paths. Detection is cached to avoid repeated filesystem walks.
     func refreshDetection() {
         detected = detector.detectAll()
-        installedCores = detector.installedRetroArchCores()
+        installedCores = detector.installedCores()
         didRefresh = true
     }
 
@@ -143,16 +143,33 @@ final class EmulatorConfigManager {
     /// + that core present + enabled.
     func availableOptions(for platform: Platform) -> [EmulatorOption] {
         ensureRefreshed()
-        let retroArchInstalled = !(detected[.retroArch] ?? []).isEmpty || hasConfiguredPath(.retroArch)
-        return database.emulatorOptions(for: platform).filter { option in
-            switch option.choice {
-            case .standalone(let type):
+        var options: [EmulatorOption] = []
+
+        // Standalone emulators (curated per platform in the database).
+        for option in database.emulatorOptions(for: platform) {
+            if case .standalone(let type) = option.choice {
                 let installed = !(detected[type] ?? []).isEmpty || hasConfiguredPath(type)
-                return installed && isEnabled(type)
-            case .retroArchCore(let core):
-                return retroArchInstalled && installedCores.contains(core) && isEnabled(.retroArch)
+                if installed && isEnabled(type) { options.append(option) }
             }
         }
+
+        // RetroArch cores, discovered dynamically: any installed core whose
+        // libretro systemid maps to this platform. Display names come from the
+        // core's .info file — no hardcoded core filenames.
+        let retroArchInstalled = !(detected[.retroArch] ?? []).isEmpty || hasConfiguredPath(.retroArch)
+        if retroArchInstalled && isEnabled(.retroArch) {
+            let systems = Set(database.libretroSystems(for: platform))
+            if !systems.isEmpty {
+                for core in installedCores where (core.systemId.map { systems.contains($0) } ?? false) {
+                    options.append(EmulatorOption(
+                        choice: .retroArchCore(core: core.filename),
+                        displayName: core.displayName
+                    ))
+                }
+            }
+        }
+
+        return options
     }
 
     /// The choice to assign automatically: the per-platform default if set and
@@ -179,10 +196,14 @@ final class EmulatorConfigManager {
             guard let path = emulatorPath(for: .retroArch) else { return nil }
             let template = config.emulators[EmulatorType.retroArch.rawValue]?.args
                 ?? database.argsTemplate(for: choice)
+            // Prefer the core's actual on-disk location (cores usually live in
+            // Application Support, not the .app bundle).
+            let corePath = installedCores.first(where: { $0.filename == core })?.url
+                ?? coresDirectory().appendingPathComponent(core)
             return ResolvedLaunch(
                 emulatorPath: path,
                 argsTemplate: template,
-                corePath: coresDirectory().appendingPathComponent(core)
+                corePath: corePath
             )
         }
     }
