@@ -93,7 +93,7 @@ final class SystemDatabaseTests: XCTestCase {
 
     func testIsoExtensionSurfacesCollisions() {
         let ids = Set(database.platforms(forExtension: ".iso").map { $0.id })
-        XCTAssertEqual(ids, ["gamecube", "wii", "ps2", "psp", "ps3"])
+        XCTAssertEqual(ids, ["gamecube", "wii", "ps2", "psp", "ps3", "3do"])
     }
 
     func testExtensionMatchIsCaseInsensitiveAndDotTolerant() {

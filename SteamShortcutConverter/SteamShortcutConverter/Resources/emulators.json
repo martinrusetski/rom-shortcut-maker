@@ -207,6 +207,185 @@
       "emulatorOptions": [
         { "type": "standalone", "emulator": "Ryujinx" }
       ]
+    },
+    {
+      "id": "c64",
+      "displayName": "Commodore 64",
+      "folderAliases": ["c64", "commodore 64", "commodore64", "cbm64", "commodore"],
+      "romExtensions": [".d64", ".t64", ".prg", ".crt", ".g64", ".tap", ".d81", ".p00"],
+      "libretroSystems": ["commodore_c64"],
+      "emulatorOptions": [
+        { "type": "standalone", "emulator": "VICE" }
+      ]
+    },
+    {
+      "id": "amiga",
+      "displayName": "Amiga",
+      "folderAliases": ["amiga", "commodore amiga", "amiga 500", "amiga 1200"],
+      "romExtensions": [".adf", ".adz", ".dms", ".ipf", ".hdf", ".lha", ".uae"],
+      "libretroSystems": ["commodore_amiga"],
+      "emulatorOptions": [
+        { "type": "standalone", "emulator": "FS-UAE" },
+        { "type": "standalone", "emulator": "vAmiga" }
+      ]
+    },
+    {
+      "id": "zxspectrum",
+      "displayName": "ZX Spectrum",
+      "folderAliases": ["zx spectrum", "spectrum", "zxspectrum", "zx", "sinclair", "sinclair zx spectrum"],
+      "romExtensions": [".tzx", ".z80", ".sna", ".szx", ".rzx", ".scl", ".trd"],
+      "libretroSystems": ["zx_spectrum"],
+      "emulatorOptions": [
+        { "type": "standalone", "emulator": "FUSE" },
+        { "type": "standalone", "emulator": "Spectral" }
+      ]
+    },
+    {
+      "id": "msx",
+      "displayName": "MSX",
+      "folderAliases": ["msx", "msx2", "msx2+", "msx turbo r"],
+      "romExtensions": [".rom", ".mx1", ".mx2", ".dsk", ".cas", ".ri"],
+      "libretroSystems": ["msx"],
+      "emulatorOptions": [
+        { "type": "standalone", "emulator": "ares" }
+      ]
+    },
+    {
+      "id": "pc98",
+      "displayName": "PC-98",
+      "folderAliases": ["pc98", "pc-98", "pc9801", "pc-9801", "nec pc-98"],
+      "romExtensions": [".hdi", ".fdi", ".d98", ".98d", ".hdm", ".nhd", ".fdd"],
+      "libretroSystems": ["pc_98"],
+      "emulatorOptions": [
+        { "type": "standalone", "emulator": "Neko Project II" },
+        { "type": "standalone", "emulator": "NP2kai" }
+      ]
+    },
+    {
+      "id": "x68000",
+      "displayName": "Sharp X68000",
+      "folderAliases": ["x68000", "x68k", "sharp x68000"],
+      "romExtensions": [".dim", ".xdf", ".d88", ".88d", ".hdf"],
+      "libretroSystems": ["sharp_x68000"],
+      "emulatorOptions": [
+        { "type": "standalone", "emulator": "XM6" }
+      ]
+    },
+    {
+      "id": "atari2600",
+      "displayName": "Atari 2600",
+      "folderAliases": ["atari2600", "atari 2600", "2600", "vcs", "atari vcs"],
+      "romExtensions": [".a26"],
+      "libretroSystems": ["atari_2600"],
+      "emulatorOptions": [
+        { "type": "standalone", "emulator": "Stella" },
+        { "type": "standalone", "emulator": "ares" }
+      ]
+    },
+    {
+      "id": "atarilynx",
+      "displayName": "Atari Lynx",
+      "folderAliases": ["lynx", "atari lynx"],
+      "romExtensions": [".lnx", ".lyx"],
+      "libretroSystems": ["atari_lynx"],
+      "emulatorOptions": [
+        { "type": "standalone", "emulator": "Mednafen" }
+      ]
+    },
+    {
+      "id": "atarijaguar",
+      "displayName": "Atari Jaguar",
+      "folderAliases": ["jaguar", "atari jaguar"],
+      "romExtensions": [".jag", ".j64", ".jagcd"],
+      "libretroSystems": ["atari_jaguar"],
+      "emulatorOptions": []
+    },
+    {
+      "id": "pcengine",
+      "displayName": "PC Engine",
+      "folderAliases": ["pce", "pc engine", "pcengine", "turbografx", "turbografx-16", "turbografx 16", "tg16"],
+      "romExtensions": [".pce", ".sgx"],
+      "libretroSystems": ["pc_engine"],
+      "emulatorOptions": [
+        { "type": "standalone", "emulator": "Mednafen" },
+        { "type": "standalone", "emulator": "ares" },
+        { "type": "standalone", "emulator": "Geargrafx" }
+      ]
+    },
+    {
+      "id": "ngp",
+      "displayName": "Neo Geo Pocket",
+      "folderAliases": ["ngp", "ngpc", "neo geo pocket", "neogeo pocket", "neo geo pocket color"],
+      "romExtensions": [".ngp", ".ngc", ".ngpc"],
+      "libretroSystems": ["neo_geo_pocket"],
+      "emulatorOptions": [
+        { "type": "standalone", "emulator": "Mednafen" },
+        { "type": "standalone", "emulator": "ares" }
+      ]
+    },
+    {
+      "id": "mastersystem",
+      "displayName": "Master System",
+      "folderAliases": ["sms", "master system", "sega master system", "mark iii"],
+      "romExtensions": [".sms"],
+      "libretroSystems": ["master_system"],
+      "emulatorOptions": [
+        { "type": "standalone", "emulator": "ares" },
+        { "type": "standalone", "emulator": "Gearsystem" },
+        { "type": "standalone", "emulator": "Mednafen" }
+      ]
+    },
+    {
+      "id": "gamegear",
+      "displayName": "Game Gear",
+      "folderAliases": ["gg", "game gear", "gamegear", "sega game gear"],
+      "romExtensions": [".gg"],
+      "libretroSystems": ["game_gear", "master_system"],
+      "emulatorOptions": [
+        { "type": "standalone", "emulator": "ares" },
+        { "type": "standalone", "emulator": "Gearsystem" }
+      ]
+    },
+    {
+      "id": "wonderswan",
+      "displayName": "WonderSwan",
+      "folderAliases": ["ws", "wsc", "wonderswan", "wonderswan color", "bandai wonderswan"],
+      "romExtensions": [".ws", ".wsc"],
+      "libretroSystems": ["wonderswan"],
+      "emulatorOptions": [
+        { "type": "standalone", "emulator": "Mednafen" },
+        { "type": "standalone", "emulator": "ares" }
+      ]
+    },
+    {
+      "id": "colecovision",
+      "displayName": "ColecoVision",
+      "folderAliases": ["coleco", "colecovision"],
+      "romExtensions": [".col"],
+      "libretroSystems": ["colecovision"],
+      "emulatorOptions": [
+        { "type": "standalone", "emulator": "ares" },
+        { "type": "standalone", "emulator": "Gearcoleco" }
+      ]
+    },
+    {
+      "id": "virtualboy",
+      "displayName": "Virtual Boy",
+      "folderAliases": ["vb", "virtualboy", "virtual boy", "nintendo virtual boy"],
+      "romExtensions": [".vb", ".vboy"],
+      "libretroSystems": ["virtual_boy"],
+      "emulatorOptions": [
+        { "type": "standalone", "emulator": "Mednafen" },
+        { "type": "standalone", "emulator": "ares" }
+      ]
+    },
+    {
+      "id": "3do",
+      "displayName": "3DO",
+      "folderAliases": ["3do", "panasonic 3do", "real3do"],
+      "romExtensions": [".cue", ".chd", ".iso"],
+      "libretroSystems": ["3do"],
+      "emulatorOptions": []
     }
   ],
   "emulators": [
@@ -235,6 +414,18 @@
     { "id": "DOSBox",         "argsTemplate": "\"{emulator}\" \"{rom}\"" },
     { "id": "Cemu",           "argsTemplate": "\"{emulator}\" \"{rom}\"" },
     { "id": "Ryujinx",        "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "VICE",            "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "FS-UAE",          "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "vAmiga",          "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "FUSE",            "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "Spectral",        "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "Neko Project II", "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "NP2kai",          "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "XM6",             "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "Stella",          "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "Geargrafx",       "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "Gearsystem",      "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "Gearcoleco",      "argsTemplate": "\"{emulator}\" \"{rom}\"" },
     { "id": "RetroArch",      "argsTemplate": "\"{emulator}\" -L \"{core}\" \"{rom}\"" }
   ]
 }
