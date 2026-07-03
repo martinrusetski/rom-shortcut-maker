@@ -341,8 +341,13 @@ class IncrementalUpdateManager {
     /// SHA256 + resolved emulator path + resolved args template + artwork identity.
     func computeChangeSignature(for entry: GameEntry) -> String {
         var parts: [String] = []
-        parts.append(entry.romPath.standardizedFileURL.path)
+        parts.append(entry.launchPath.standardizedFileURL.path)
         parts.append(romFileHash(entry.romPath) ?? "nohash")
+        // Hash member files (a .cue's tracks, an .m3u's discs) so a re-dumped
+        // track is detected even though the entry-point file is unchanged.
+        for member in entry.additionalFiles.sorted(by: { $0.path < $1.path }) {
+            parts.append(romFileHash(member) ?? "")
+        }
         parts.append(entry.emulatorPath?.path ?? "noemu")
         parts.append(entry.argsTemplate)
         switch entry.artworkStatus {

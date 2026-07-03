@@ -18,6 +18,7 @@ struct GameOverride: Codable, Equatable {
     var emulator: EmulatorChoice?
     var args: String?
     var platform: String?      // platform id
+    var imagePath: String?     // chosen launch image among alternates
 }
 
 /// config.json v2 (ROM pipeline slice).

@@ -157,4 +157,60 @@ final class ROMScannerTests: XCTestCase {
         XCTAssertEqual(shout?.romExtension, ".sfc")
         XCTAssertEqual(shout?.platform?.id, "snes")
     }
+
+    // MARK: - Multi-file / multi-disc
+
+    func testMultiTrackCueCollapsesToOneGameAndHidesBins() async throws {
+        // Princess Crown: one disc, cue + 2 bin tracks + a chd of the same disc.
+        try makeFile("Saturn/Princess Crown/Princess Crown (Japan) (Track 01).bin")
+        try makeFile("Saturn/Princess Crown/Princess Crown (Japan) (Track 02).bin")
+        try makeFile("Saturn/Princess Crown/Princess Crown (Japan).cue", contents: """
+        FILE "Princess Crown (Japan) (Track 01).bin" BINARY
+          TRACK 01 MODE1/2352
+            INDEX 01 00:00:00
+        FILE "Princess Crown (Japan) (Track 02).bin" BINARY
+          TRACK 02 AUDIO
+            INDEX 01 00:00:00
+        """)
+        try makeFile("Saturn/Princess Crown/Princess Crown (Japan).chd")
+
+        let roms = try await scan()
+        XCTAssertEqual(roms.count, 1, "cue+bins+chd should be one game")
+        let game = roms[0]
+        XCTAssertEqual(game.url.pathExtension, "cue", "Saturn prefers the cue image")
+        XCTAssertTrue(game.alternateImages.contains { $0.pathExtension == "chd" })
+        XCTAssertEqual(game.memberFiles.filter { $0.pathExtension == "bin" }.count, 2)
+        // No .bin surfaced as its own entry.
+        XCTAssertFalse(roms.contains { $0.url.pathExtension == "bin" })
+    }
+
+    func testExistingM3UIsTheSingleEntryPoint() async throws {
+        // Panzer: an .m3u lists two per-disc cues; each cue references a bin.
+        try makeFile("Saturn/Panzer/Panzer (Disc 1) (Track 1).bin")
+        try makeFile("Saturn/Panzer/Panzer (Disc 2) (Track 1).bin")
+        try makeFile("Saturn/Panzer/Panzer (Disc 1).cue",
+                     contents: "FILE \"Panzer (Disc 1) (Track 1).bin\" BINARY\n  TRACK 01 MODE1/2352\n")
+        try makeFile("Saturn/Panzer/Panzer (Disc 2).cue",
+                     contents: "FILE \"Panzer (Disc 2) (Track 1).bin\" BINARY\n  TRACK 01 MODE1/2352\n")
+        try makeFile("Saturn/Panzer/Panzer.m3u", contents: "Panzer (Disc 1).cue\nPanzer (Disc 2).cue\n")
+
+        let roms = try await scan()
+        XCTAssertEqual(roms.count, 1)
+        XCTAssertEqual(roms[0].url.pathExtension, "m3u")
+        XCTAssertTrue(roms[0].discPaths.isEmpty, "existing m3u needs no generated playlist")
+        // The disc cues are members, not separate games.
+        XCTAssertFalse(roms.contains { $0.url.pathExtension == "cue" })
+    }
+
+    func testMultiDiscWithoutM3UIsGrouped() async throws {
+        // No playlist; two discs distinguished by (Disc N) markers.
+        try makeFile("PSX/FF7/Final Fantasy VII (Disc 1).chd")
+        try makeFile("PSX/FF7/Final Fantasy VII (Disc 2).chd")
+        try makeFile("PSX/FF7/Final Fantasy VII (Disc 3).chd")
+
+        let roms = try await scan()
+        XCTAssertEqual(roms.count, 1, "three discs are one game")
+        XCTAssertEqual(roms[0].platform?.id, "ps1")
+        XCTAssertEqual(roms[0].discPaths.count, 3, "needs a generated playlist over 3 discs")
+    }
 }

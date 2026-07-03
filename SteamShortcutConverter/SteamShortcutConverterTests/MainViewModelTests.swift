@@ -94,11 +94,27 @@ final class MainViewModelTests: XCTestCase {
             artworkCache: ArtworkCache(baseDirectory: tempDir.appendingPathComponent("artcache")),
             artworkProvider: provider,
             bundleGenerator: generator ?? FakeGameBundleGenerator(),
-            vdfBridge: VDFToGameEntryBridge(database: database)
+            vdfBridge: VDFToGameEntryBridge(database: database),
+            playlistManager: PlaylistManager(directory: tempDir.appendingPathComponent("playlists"))
         )
         // The fake scanner ignores the directory, but scan() guards on it.
         viewModel.scanDirectory = "/ROMs"
         return viewModel
+    }
+
+    private func multiDiscROM(discs: [String]) -> DiscoveredROM {
+        let urls = discs.map { URL(fileURLWithPath: $0) }
+        return DiscoveredROM(
+            url: urls[0],
+            fileSize: 10,
+            romExtension: ".chd",
+            platform: Platform(id: "ps1", displayName: "PS1"),
+            candidateEmulators: [.duckstation],
+            platformAmbiguous: false,
+            memberFiles: urls,
+            alternateImages: [],
+            discPaths: urls
+        )
     }
 
     // MARK: - Load
@@ -184,6 +200,20 @@ final class MainViewModelTests: XCTestCase {
         } else {
             XCTFail("expected cached artwork, got \(vm.games[0].artworkStatus)")
         }
+    }
+
+    // MARK: - Multi-disc
+
+    func testMultiDiscScanGeneratesPlaylist() async {
+        let vm = makeViewModel(roms: [multiDiscROM(discs: [
+            "/ROMs/PSX/FF7/FF7 (Disc 1).chd",
+            "/ROMs/PSX/FF7/FF7 (Disc 2).chd",
+            "/ROMs/PSX/FF7/FF7 (Disc 3).chd"
+        ])])
+        await vm.scan()
+        XCTAssertEqual(vm.games.count, 1)
+        XCTAssertEqual(vm.games[0].romPath.pathExtension, "m3u", "multi-disc game launches via a generated playlist")
+        XCTAssertEqual(vm.games[0].additionalFiles.count, 3)
     }
 
     // MARK: - Reset (un-skipped, hermetic)

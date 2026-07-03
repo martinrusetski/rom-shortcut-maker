@@ -115,6 +115,21 @@ final class IncrementalUpdateManagerGameTests: XCTestCase {
         XCTAssertEqual(changes[entry.stableKey]?.previousBundlePath, bundle.path)
     }
 
+    func testModifiedWhenMemberFileChanges() throws {
+        let cue = try writeROM("game.cue", bytes: [1, 2, 3])
+        let track = try writeROM("track01.bin", bytes: [4, 4, 4])
+        var entry = makeEntry(rom: cue)
+        entry.additionalFiles = [track]
+        let bundle = try makeBundleDir("Game.app")
+        let state = GameConversionState(convertedGames: [
+            manager.buildConvertedGame(for: entry, bundlePath: bundle.path)
+        ])
+        // Re-dump a track (entry .cue unchanged, but a member changed).
+        try Data([9, 9, 9, 9, 9]).write(to: track)
+        let changes = manager.detectChanges(currentGames: [entry], previousState: state)
+        XCTAssertEqual(changes[entry.stableKey]?.changeType, .modified)
+    }
+
     // MARK: - Hash caching
 
     func testMtimeSizeShortCircuit() throws {

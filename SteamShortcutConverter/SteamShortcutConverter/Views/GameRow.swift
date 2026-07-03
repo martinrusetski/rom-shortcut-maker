@@ -33,15 +33,27 @@ struct GameRow: View {
                 .textFieldStyle(.plain)
                 .font(.body)
 
-                Text(game.romPath.path)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(game.romPath.path)
+                HStack(spacing: 6) {
+                    Text(game.launchPath.path)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(game.launchPath.path)
+                    if game.launchPath.pathExtension.lowercased() == "m3u" {
+                        Label("multi-disc", systemImage: "opticaldisc")
+                            .font(.caption2).foregroundColor(.secondary)
+                            .labelStyle(.titleAndIcon)
+                    } else if !game.additionalFiles.isEmpty {
+                        Text("+\(game.additionalFiles.count) files")
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
+                }
             }
 
             Spacer(minLength: 8)
+
+            imageSwitcher
 
             platformBadge
 
@@ -69,6 +81,32 @@ struct GameRow: View {
             RoundedRectangle(cornerRadius: 4)
                 .fill(Color.secondary.opacity(0.15))
                 .overlay(Image(systemName: "gamecontroller").font(.caption).foregroundColor(.secondary))
+        }
+    }
+
+    @ViewBuilder
+    private var imageSwitcher: some View {
+        if !game.alternateImages.isEmpty {
+            let allImages = [game.romPath] + game.alternateImages
+            Menu {
+                ForEach(allImages, id: \.self) { image in
+                    Button {
+                        viewModel.setLaunchImage(image, for: game)
+                    } label: {
+                        if image == game.launchPath {
+                            Label(image.pathExtension.uppercased(), systemImage: "checkmark")
+                        } else {
+                            Text(image.pathExtension.uppercased())
+                        }
+                    }
+                }
+            } label: {
+                Text(".\(game.launchPath.pathExtension.lowercased())")
+                    .font(.caption)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Choose which disc image to launch")
         }
     }
 

@@ -45,6 +45,7 @@ final class MainViewModel: ObservableObject {
     private let bundleGenerator: GameBundleGenerating
     private let incrementalManager: IncrementalUpdateManager
     private let vdfBridge: VDFToGameEntryBridge
+    private let playlistManager: PlaylistWriting
     private let filenameParser = ROMFilenameParser()
     private let shortcutFilter: ShortcutFilter = DefaultShortcutFilter()
 
@@ -65,6 +66,7 @@ final class MainViewModel: ObservableObject {
         artworkProvider: ArtworkProvider? = nil,
         bundleGenerator: GameBundleGenerating,
         vdfBridge: VDFToGameEntryBridge,
+        playlistManager: PlaylistWriting = PlaylistManager(),
         incrementalManager: IncrementalUpdateManager = IncrementalUpdateManager()
     ) {
         self.database = database
@@ -75,6 +77,7 @@ final class MainViewModel: ObservableObject {
         self.injectedArtworkProvider = artworkProvider
         self.bundleGenerator = bundleGenerator
         self.vdfBridge = vdfBridge
+        self.playlistManager = playlistManager
         self.incrementalManager = incrementalManager
     }
 
@@ -166,14 +169,25 @@ final class MainViewModel: ObservableObject {
     }
 
     private func makeEntry(from rom: DiscoveredROM) -> GameEntry {
+        // A multi-disc game with no existing .m3u gets a generated playlist (in
+        // our app folder, absolute paths) as its launch target.
+        var romPath = rom.url
+        if !rom.discPaths.isEmpty {
+            if let playlist = try? playlistManager.playlistURL(forDiscs: rom.discPaths) {
+                romPath = playlist
+            }
+        }
+
         let metadata = filenameParser.parse(filename: rom.url.lastPathComponent)
         let platform = rom.platform ?? Platform(id: "unknown", displayName: "Unknown")
         var entry = GameEntry(
             title: metadata.title,
-            romPath: rom.url,
+            romPath: romPath,
             romMetadata: metadata,
             platform: platform,
-            source: .romScan
+            source: .romScan,
+            additionalFiles: rom.memberFiles,
+            alternateImages: rom.alternateImages
         )
         if rom.platform != nil, let choice = emulatorConfig.defaultChoice(for: platform) {
             assignEmulator(&entry, choice: choice)
@@ -202,6 +216,9 @@ final class MainViewModel: ObservableObject {
             }
             if let choice = override.emulator { assignEmulator(&games[index], choice: choice) }
             if let args = override.args { games[index].argsTemplate = args }
+            if let imagePath = override.imagePath {
+                games[index].launchImage = URL(fileURLWithPath: imagePath)
+            }
         }
     }
 
@@ -258,6 +275,11 @@ final class MainViewModel: ObservableObject {
             }
         }
         updateOverride(game.stableKey) { $0.platform = platform.id }
+    }
+
+    func setLaunchImage(_ url: URL, for game: GameEntry) {
+        updateGame(game.id) { $0.launchImage = url }
+        updateOverride(game.stableKey) { $0.imagePath = (url == game.romPath) ? nil : url.path }
     }
 
     func availableOptions(for game: GameEntry) -> [EmulatorOption] {
@@ -406,7 +428,7 @@ final class MainViewModel: ObservableObject {
                 displayName: game.title,
                 executablePath: resolved.emulatorPath,
                 argsTemplate: resolved.argsTemplate,
-                romPath: game.romPath,
+                romPath: game.launchPath,
                 corePath: resolved.corePath,
                 iconICNS: artworkCache.hasICNS(for: game.stableKey) ? artworkCache.icnsURL(for: game.stableKey) : nil,
                 iconOriginalPNG: artworkCache.hasOriginal(for: game.stableKey) ? artworkCache.originalURL(for: game.stableKey) : nil,

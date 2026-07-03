@@ -510,6 +510,20 @@ struct GameEntry: Identifiable, Codable, Equatable {
     var artworkStatus: ArtworkStatus
     var source: GameSource
 
+    /// Track / disc member files referenced by `romPath` (a .cue's tracks, an
+    /// .m3u's discs). Hashed for change detection; not launched directly.
+    var additionalFiles: [URL]
+    /// Other launchable images of the same disc (e.g. a .chd alongside a .cue)
+    /// the user can switch to.
+    var alternateImages: [URL]
+    /// User-chosen launch image among `romPath` + `alternateImages`. When nil,
+    /// `romPath` (the platform-preferred image) is used. Does NOT affect
+    /// `stableKey` — switching the image is the same game.
+    var launchImage: URL?
+
+    /// The path actually launched: the chosen image, else the primary rom path.
+    var launchPath: URL { launchImage ?? romPath }
+
     /// Stable identity for caching/overrides: derived from `romPath`, NOT the
     /// random UUID. Use this (not `id`) as the key for gameOverrides and the
     /// artwork cache so re-scanning the same library reattaches state.
@@ -530,7 +544,10 @@ struct GameEntry: Identifiable, Codable, Equatable {
         argsTemplate: String = "",
         isSelected: Bool = true,
         artworkStatus: ArtworkStatus = .none,
-        source: GameSource = .romScan
+        source: GameSource = .romScan,
+        additionalFiles: [URL] = [],
+        alternateImages: [URL] = [],
+        launchImage: URL? = nil
     ) {
         self.id = id
         self.title = title
@@ -543,5 +560,8 @@ struct GameEntry: Identifiable, Codable, Equatable {
         self.isSelected = isSelected
         self.artworkStatus = artworkStatus
         self.source = source
+        self.additionalFiles = additionalFiles
+        self.alternateImages = alternateImages
+        self.launchImage = launchImage
     }
 }

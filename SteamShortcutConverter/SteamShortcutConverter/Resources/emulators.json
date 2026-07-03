@@ -106,7 +106,7 @@
       "id": "ps1",
       "displayName": "PS1",
       "folderAliases": ["ps1", "psx", "playstation", "playstation 1", "psone", "sony playstation"],
-      "romExtensions": [".cue", ".chd", ".bin", ".m3u", ".pbp", ".ecm"],
+      "romExtensions": [".cue", ".chd", ".bin", ".m3u", ".pbp", ".ecm", ".ccd"],
       "emulatorOptions": [
         { "type": "standalone",    "emulator": "DuckStation" },
         { "type": "retroArchCore", "core": "swanstation_libretro.dylib", "displayName": "SwanStation (RetroArch)" },
@@ -117,7 +117,7 @@
       "id": "ps2",
       "displayName": "PS2",
       "folderAliases": ["ps2", "playstation 2", "sony playstation 2"],
-      "romExtensions": [".iso", ".chd", ".cso", ".bin"],
+      "romExtensions": [".iso", ".chd", ".cso", ".bin", ".m3u"],
       "emulatorOptions": [
         { "type": "standalone",    "emulator": "PCSX2" },
         { "type": "standalone",    "emulator": "Play!" },
@@ -128,7 +128,7 @@
       "id": "psp",
       "displayName": "PSP",
       "folderAliases": ["psp", "playstation portable"],
-      "romExtensions": [".iso", ".cso", ".chd", ".pbp"],
+      "romExtensions": [".iso", ".cso", ".chd", ".pbp", ".m3u"],
       "emulatorOptions": [
         { "type": "standalone",    "emulator": "PPSSPP" },
         { "type": "retroArchCore", "core": "ppsspp_libretro.dylib", "displayName": "PPSSPP (RetroArch)" }
@@ -169,7 +169,7 @@
       "id": "dreamcast",
       "displayName": "Dreamcast",
       "folderAliases": ["dreamcast", "dc", "sega dreamcast"],
-      "romExtensions": [".cdi", ".chd", ".gdi", ".cue"],
+      "romExtensions": [".cdi", ".chd", ".gdi", ".cue", ".m3u", ".ccd"],
       "emulatorOptions": [
         { "type": "standalone",    "emulator": "Flycast" },
         { "type": "standalone",    "emulator": "Redream" },
