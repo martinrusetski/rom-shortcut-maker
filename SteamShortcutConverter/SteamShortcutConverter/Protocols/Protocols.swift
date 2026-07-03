@@ -168,7 +168,10 @@ enum EmulatorType: String, CaseIterable {
         case .pcsx2:
             return ["pcsx2"]
         case .ppsspp:
-            return ["ppsspp"]
+            // "PPSSPPSDL" is the macOS SDL build's bundle/executable name; the
+            // word-boundary matcher won't find "ppsspp" inside it (no boundary
+            // before "sdl"), so match the full name explicitly.
+            return ["ppsspp", "ppssppsdl"]
         case .rpcs3:
             return ["rpcs3"]
         case .epsxe:
