@@ -212,7 +212,9 @@ final class EmulatorDetector {
                 ))
             }
         }
-        return cores
+        // Stable, deterministic order so the per-platform default doesn't depend
+        // on filesystem enumeration order.
+        return cores.sorted { $0.displayName < $1.displayName }
     }
 
     // MARK: - Core info
