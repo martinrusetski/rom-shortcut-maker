@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import CryptoKit
 
 // MARK: - Steam Shortcut Data
 
@@ -315,5 +316,232 @@ enum AppError: LocalizedError, Equatable {
         case .configurationError:
             return "Reset configuration or manually correct the settings."
         }
+    }
+}
+
+// MARK: - ROM Pipeline: Platform
+
+/// A game platform / console, as defined by the System Database (Phase A2).
+/// This is a lightweight identity value (id + display name); the database owns
+/// the richer per-platform data (folder aliases, extensions, emulator options).
+struct Platform: Codable, Equatable, Hashable, Identifiable {
+    let id: String            // canonical id, e.g. "snes"
+    let displayName: String   // e.g. "SNES"
+
+    init(id: String, displayName: String) {
+        self.id = id
+        self.displayName = displayName
+    }
+}
+
+// MARK: - ROM Pipeline: Emulator Choice
+
+/// How a ROM is launched: either a standalone emulator, or RetroArch with a
+/// specific core. A platform can have several valid choices and which ones are
+/// usable depends on what the user has installed, which is why the assignment is
+/// a choice, not a bare `EmulatorType`.
+enum EmulatorChoice: Equatable, Hashable {
+    case standalone(EmulatorType)
+    case retroArchCore(core: String)   // e.g. "snes9x_libretro.dylib"
+}
+
+extension EmulatorChoice: Codable {
+    // Tagged-object encoding, matching config.json v2:
+    //   { "type": "standalone",    "emulator": "Snes9x" }
+    //   { "type": "retroArchCore", "core": "snes9x_libretro.dylib" }
+    enum CodingKeys: String, CodingKey {
+        case type
+        case emulator
+        case core
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .standalone(let type):
+            try container.encode("standalone", forKey: .type)
+            try container.encode(type.rawValue, forKey: .emulator)
+        case .retroArchCore(let core):
+            try container.encode("retroArchCore", forKey: .type)
+            try container.encode(core, forKey: .core)
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let type = try container.decode(String.self, forKey: .type)
+        switch type {
+        case "standalone":
+            let raw = try container.decode(String.self, forKey: .emulator)
+            guard let emulator = EmulatorType(rawValue: raw) else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .emulator,
+                    in: container,
+                    debugDescription: "Unknown emulator identifier: \(raw)"
+                )
+            }
+            self = .standalone(emulator)
+        case "retroArchCore":
+            let core = try container.decode(String.self, forKey: .core)
+            self = .retroArchCore(core: core)
+        default:
+            throw DecodingError.dataCorruptedError(
+                forKey: .type,
+                in: container,
+                debugDescription: "Unknown EmulatorChoice type: \(type)"
+            )
+        }
+    }
+}
+
+// MARK: - ROM Pipeline: Artwork Status
+
+/// Runtime status of a game's artwork.
+enum ArtworkStatus: Equatable {
+    case none
+    case downloading
+    case cached(URL)
+    case failed(String)
+}
+
+extension ArtworkStatus: Codable {
+    enum CodingKeys: String, CodingKey {
+        case type
+        case url
+        case message
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .none:
+            try container.encode("none", forKey: .type)
+        case .downloading:
+            try container.encode("downloading", forKey: .type)
+        case .cached(let url):
+            try container.encode("cached", forKey: .type)
+            try container.encode(url, forKey: .url)
+        case .failed(let message):
+            try container.encode("failed", forKey: .type)
+            try container.encode(message, forKey: .message)
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let type = try container.decode(String.self, forKey: .type)
+        switch type {
+        case "none":
+            self = .none
+        case "downloading":
+            self = .downloading
+        case "cached":
+            let url = try container.decode(URL.self, forKey: .url)
+            self = .cached(url)
+        case "failed":
+            let message = try container.decode(String.self, forKey: .message)
+            self = .failed(message)
+        default:
+            throw DecodingError.dataCorruptedError(
+                forKey: .type,
+                in: container,
+                debugDescription: "Unknown ArtworkStatus type: \(type)"
+            )
+        }
+    }
+}
+
+// MARK: - ROM Pipeline: Game Source
+
+/// Where a game entry originated.
+enum GameSource: String, Codable {
+    case romScan
+    case steamVDF
+}
+
+// MARK: - ROM Pipeline: ROM Metadata
+
+/// Metadata parsed from a ROM filename by `ROMFilenameParser`.
+struct ROMMetadata: Codable, Equatable {
+    let rawFilename: String
+    let title: String
+    let region: String?
+    let version: String?
+    let discNumber: Int?
+    let discTotal: Int?
+    let languages: [String]
+    let flags: [String]
+
+    init(
+        rawFilename: String,
+        title: String,
+        region: String? = nil,
+        version: String? = nil,
+        discNumber: Int? = nil,
+        discTotal: Int? = nil,
+        languages: [String] = [],
+        flags: [String] = []
+    ) {
+        self.rawFilename = rawFilename
+        self.title = title
+        self.region = region
+        self.version = version
+        self.discNumber = discNumber
+        self.discTotal = discTotal
+        self.languages = languages
+        self.flags = flags
+    }
+}
+
+// MARK: - ROM Pipeline: Game Entry
+
+/// The core entity of the ROM pipeline. Supplants `SteamShortcut` everywhere
+/// except the VDF import bridge.
+struct GameEntry: Identifiable, Codable, Equatable {
+    let id: UUID
+    var title: String              // Display name (custom override or parsed title)
+    let romPath: URL               // Path to ROM file on disk
+    var romMetadata: ROMMetadata   // Parsed from filename
+    var platform: Platform         // Resolved platform (see SystemDatabase)
+    var emulator: EmulatorChoice?  // Assigned emulator choice (nil = unresolved)
+    var emulatorPath: URL?         // Resolved executable path (RetroArch binary, for cores)
+    var argsTemplate: String       // Argument template (defaults from emulator DB)
+    var isSelected: Bool
+    var artworkStatus: ArtworkStatus
+    var source: GameSource
+
+    /// Stable identity for caching/overrides: derived from `romPath`, NOT the
+    /// random UUID. Use this (not `id`) as the key for gameOverrides and the
+    /// artwork cache so re-scanning the same library reattaches state.
+    var stableKey: String {
+        let normalizedPath = romPath.standardizedFileURL.path
+        let digest = SHA256.hash(data: Data(normalizedPath.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    init(
+        id: UUID = UUID(),
+        title: String,
+        romPath: URL,
+        romMetadata: ROMMetadata,
+        platform: Platform,
+        emulator: EmulatorChoice? = nil,
+        emulatorPath: URL? = nil,
+        argsTemplate: String = "",
+        isSelected: Bool = true,
+        artworkStatus: ArtworkStatus = .none,
+        source: GameSource = .romScan
+    ) {
+        self.id = id
+        self.title = title
+        self.romPath = romPath
+        self.romMetadata = romMetadata
+        self.platform = platform
+        self.emulator = emulator
+        self.emulatorPath = emulatorPath
+        self.argsTemplate = argsTemplate
+        self.isSelected = isSelected
+        self.artworkStatus = artworkStatus
+        self.source = source
     }
 }
