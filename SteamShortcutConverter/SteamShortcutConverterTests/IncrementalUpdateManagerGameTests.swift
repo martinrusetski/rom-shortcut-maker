@@ -82,6 +82,30 @@ final class IncrementalUpdateManagerGameTests: XCTestCase {
         XCTAssertEqual(changes[changed.stableKey]?.changeType, .modified)
     }
 
+    func testModifiedWhenRetroArchCoreChanges() throws {
+        // Two RetroArch cores share the same binary path and args template; only
+        // the emulator choice differs. The bundle must still be regenerated.
+        let rom = try writeROM("a.sfc", bytes: [1, 2, 3])
+        let retroArch = URL(fileURLWithPath: "/Applications/RetroArch.app")
+        let coreArgs = "\"{emulator}\" -L \"{core}\" \"{rom}\""
+
+        var original = makeEntry(rom: rom, args: coreArgs)
+        original.emulatorPath = retroArch
+        original.emulator = .retroArchCore(core: "snes9x_libretro.dylib")
+
+        let bundle = try makeBundleDir("Game.app")
+        let state = GameConversionState(convertedGames: [
+            manager.buildConvertedGame(for: original, bundlePath: bundle.path)
+        ])
+
+        var switched = makeEntry(rom: rom, args: coreArgs)
+        switched.emulatorPath = retroArch
+        switched.emulator = .retroArchCore(core: "bsnes_libretro.dylib")
+
+        let changes = manager.detectChanges(currentGames: [switched], previousState: state)
+        XCTAssertEqual(changes[switched.stableKey]?.changeType, .modified)
+    }
+
     func testModifiedWhenBundleMissing() throws {
         let entry = makeEntry(rom: try writeROM("a.sfc", bytes: [1, 2, 3]))
         let state = GameConversionState(convertedGames: [

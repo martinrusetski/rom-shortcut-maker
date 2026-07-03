@@ -348,6 +348,10 @@ class IncrementalUpdateManager {
         for member in entry.additionalFiles.sorted(by: { $0.path < $1.path }) {
             parts.append(romFileHash(member) ?? "")
         }
+        // Include the emulator choice itself: switching between two RetroArch
+        // cores keeps the same binary path and args template, so the choice is the
+        // only thing that distinguishes them.
+        parts.append(entry.emulator?.signatureToken ?? "nochoice")
         parts.append(entry.emulatorPath?.path ?? "noemu")
         parts.append(entry.argsTemplate)
         switch entry.artworkStatus {

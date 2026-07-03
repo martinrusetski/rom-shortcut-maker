@@ -343,6 +343,16 @@ struct Platform: Codable, Equatable, Hashable, Identifiable {
 enum EmulatorChoice: Equatable, Hashable {
     case standalone(EmulatorType)
     case retroArchCore(core: String)   // e.g. "snes9x_libretro.dylib"
+
+    /// Stable identity string for change detection. Distinguishes two RetroArch
+    /// cores, which share the same emulator binary and args template and would
+    /// otherwise hash identically.
+    var signatureToken: String {
+        switch self {
+        case .standalone(let type): return "standalone:" + type.rawValue
+        case .retroArchCore(let core): return "core:" + core
+        }
+    }
 }
 
 extension EmulatorChoice: Codable {
