@@ -29,11 +29,54 @@ struct ShortcutChange {
     }
 }
 
+// MARK: - ROM Pipeline change types
+
+/// A detected change for a ROM-pipeline game entry.
+struct GameChange {
+    let entry: GameEntry?
+    let changeType: ShortcutChangeType
+    let previousBundlePath: String?
+
+    init(entry: GameEntry?, changeType: ShortcutChangeType, previousBundlePath: String? = nil) {
+        self.entry = entry
+        self.changeType = changeType
+        self.previousBundlePath = previousBundlePath
+    }
+}
+
+/// Record of a converted game for incremental update tracking. Keyed by
+/// `stableKey` (ROM-path hash), NOT a Steam appID.
+struct ConvertedGame: Equatable, Codable, Hashable {
+    let stableKey: String
+    let title: String
+    let changeSignatureHash: String
+    let bundlePath: String
+}
+
+/// Previous conversion state for the ROM pipeline.
+struct GameConversionState: Equatable, Codable {
+    let timestamp: Date
+    let convertedGames: [ConvertedGame]
+
+    init(timestamp: Date = Date(), convertedGames: [ConvertedGame]) {
+        self.timestamp = timestamp
+        self.convertedGames = convertedGames
+    }
+}
+
 /// Manager for detecting and handling incremental updates
 class IncrementalUpdateManager {
-    
+
     private let fileManager = FileManager.default
-    
+
+    /// Cache of expensive ROM content hashes, keyed by path. Re-hash only when
+    /// the file's mtime or size changes.
+    private var romHashCache: [String: (mtime: Date, size: Int64, hash: String)] = [:]
+
+    /// Number of real (non-cached) ROM hash computations performed — exposed for
+    /// tests to prove the mtime/size short-circuit works.
+    private(set) var romHashComputationCount = 0
+
     // MARK: - Change Detection
     
     /// Compare current shortcuts against previous conversion state
@@ -244,5 +287,120 @@ class IncrementalUpdateManager {
             iconHash: iconHash,
             bundlePath: bundlePath
         )
+    }
+
+    // MARK: - ROM Pipeline: Change Detection
+
+    /// Compare current game entries against a previous conversion state, keyed by
+    /// `stableKey`. Preserves the "regenerate if the bundle is missing on disk"
+    /// behavior of the Steam path.
+    func detectChanges(
+        currentGames: [GameEntry],
+        previousState: GameConversionState?
+    ) -> [String: GameChange] {
+        var changes: [String: GameChange] = [:]
+
+        guard let previousState = previousState else {
+            for entry in currentGames {
+                changes[entry.stableKey] = GameChange(entry: entry, changeType: .new)
+            }
+            return changes
+        }
+
+        var previousByKey: [String: ConvertedGame] = [:]
+        for record in previousState.convertedGames where previousByKey[record.stableKey] == nil {
+            previousByKey[record.stableKey] = record
+        }
+
+        var currentKeys: Set<String> = []
+        for entry in currentGames {
+            currentKeys.insert(entry.stableKey)
+            if let previous = previousByKey[entry.stableKey] {
+                let signature = computeChangeSignature(for: entry)
+                let bundleExists = fileManager.fileExists(atPath: previous.bundlePath)
+                if !bundleExists {
+                    changes[entry.stableKey] = GameChange(entry: entry, changeType: .modified, previousBundlePath: previous.bundlePath)
+                } else if signature != previous.changeSignatureHash {
+                    changes[entry.stableKey] = GameChange(entry: entry, changeType: .modified, previousBundlePath: previous.bundlePath)
+                } else {
+                    changes[entry.stableKey] = GameChange(entry: entry, changeType: .unchanged, previousBundlePath: previous.bundlePath)
+                }
+            } else {
+                changes[entry.stableKey] = GameChange(entry: entry, changeType: .new)
+            }
+        }
+
+        for previous in previousState.convertedGames where !currentKeys.contains(previous.stableKey) {
+            changes[previous.stableKey] = GameChange(entry: nil, changeType: .removed, previousBundlePath: previous.bundlePath)
+        }
+
+        return changes
+    }
+
+    /// The change signature for a game entry: hashes ROM path + ROM content
+    /// SHA256 + resolved emulator path + resolved args template + artwork identity.
+    func computeChangeSignature(for entry: GameEntry) -> String {
+        var parts: [String] = []
+        parts.append(entry.romPath.standardizedFileURL.path)
+        parts.append(romFileHash(entry.romPath) ?? "nohash")
+        parts.append(entry.emulatorPath?.path ?? "noemu")
+        parts.append(entry.argsTemplate)
+        switch entry.artworkStatus {
+        case .cached(let url):
+            parts.append("art:" + url.path)
+        default:
+            parts.append("art:none")
+        }
+        let data = Data(parts.joined(separator: "|").utf8)
+        return SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Content SHA256 of a ROM file, cached by (path, mtime, size) so multi-GB
+    /// ISOs aren't re-hashed on every scan.
+    func romFileHash(_ url: URL) -> String? {
+        let path = url.path
+        guard let attributes = try? fileManager.attributesOfItem(atPath: path),
+              let size = (attributes[.size] as? NSNumber)?.int64Value,
+              let mtime = attributes[.modificationDate] as? Date else {
+            return nil
+        }
+
+        if let cached = romHashCache[path], cached.size == size, cached.mtime == mtime {
+            return cached.hash
+        }
+
+        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
+        let hash = SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
+        romHashCache[path] = (mtime, size, hash)
+        romHashComputationCount += 1
+        return hash
+    }
+
+    /// Build a `ConvertedGame` record for a generated bundle.
+    func buildConvertedGame(for entry: GameEntry, bundlePath: String) -> ConvertedGame {
+        ConvertedGame(
+            stableKey: entry.stableKey,
+            title: entry.title,
+            changeSignatureHash: computeChangeSignature(for: entry),
+            bundlePath: bundlePath
+        )
+    }
+
+    /// Delete orphaned bundles for removed games.
+    func cleanupOrphanedGameBundles(
+        changes: [String: GameChange],
+        removeOrphaned: Bool
+    ) throws -> [String] {
+        guard removeOrphaned else { return [] }
+        var deletedPaths: [String] = []
+        for (_, change) in changes where change.changeType == .removed {
+            guard let bundlePath = change.previousBundlePath else { continue }
+            if fileManager.fileExists(atPath: bundlePath) {
+                try fileManager.removeItem(at: URL(fileURLWithPath: bundlePath))
+                deletedPaths.append(bundlePath)
+                Logger.shared.logBundleDeleted(bundlePath)
+            }
+        }
+        return deletedPaths
     }
 }
