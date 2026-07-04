@@ -29,6 +29,14 @@ struct DiscoveredROM: Equatable {
     /// games that already have an .m3u (whose url points at that .m3u).
     let discPaths: [URL]
 
+    // MARK: Metadata hints
+    /// A better title than the filename can provide (e.g. the PARAM.SFO TITLE
+    /// of a PS3 extracted-disc folder). Overrides the parsed filename title.
+    let titleHint: String?
+    /// Bundled artwork discovered next to the ROM (e.g. a PS3 ICON0.PNG),
+    /// seeded into the artwork cache when no cached artwork exists yet.
+    let artworkHint: URL?
+
     init(
         url: URL,
         fileSize: Int64,
@@ -38,7 +46,9 @@ struct DiscoveredROM: Equatable {
         platformAmbiguous: Bool,
         memberFiles: [URL] = [],
         alternateImages: [URL] = [],
-        discPaths: [URL] = []
+        discPaths: [URL] = [],
+        titleHint: String? = nil,
+        artworkHint: URL? = nil
     ) {
         self.url = url
         self.fileSize = fileSize
@@ -49,6 +59,8 @@ struct DiscoveredROM: Equatable {
         self.memberFiles = memberFiles
         self.alternateImages = alternateImages
         self.discPaths = discPaths
+        self.titleHint = titleHint
+        self.artworkHint = artworkHint
     }
 }
 
@@ -88,25 +100,40 @@ final class ROMScanner: ROMScanning {
 
         guard let enumerator = fileManager.enumerator(
             at: directory,
-            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
+            includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey, .fileSizeKey],
             options: [.skipsHiddenFiles]
         ) else {
             throw ScanError.directoryNotReadable(directory)
         }
 
         // First pass: collect candidate ROM files (so progress has a denominator).
+        // PS3 extracted-disc folders are recognized as whole-directory games and
+        // consumed here, so nothing inside them (EBOOT.BIN, stray .bin/.pkg
+        // files) is double-collected as a loose ROM.
         var candidates: [URL] = []
+        var ps3GameRoots: [URL] = []
         for case let url as URL in enumerator {
-            let values = try? url.resourceValues(forKeys: [.isRegularFileKey])
+            let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey])
+            if values?.isDirectory == true {
+                if ps3GameLayout(at: url) != nil {
+                    ps3GameRoots.append(url)
+                    enumerator.skipDescendants()
+                }
+                continue
+            }
             guard values?.isRegularFile == true else { continue }
             let ext = normalizedExtension(of: url)
             guard !ext.isEmpty, knownExtensions.contains(ext) else { continue }
             candidates.append(url)
         }
 
+        // Synthesized single-entry-point games; they bypass the sheet/playlist/
+        // grouping machinery below.
+        let ps3Games = ps3GameRoots.compactMap { makePS3ROM(gameRoot: $0) }
+
         guard !candidates.isEmpty else {
             progress(1.0)
-            return []
+            return ps3Games
         }
 
         progress(0.0)
@@ -122,7 +149,7 @@ final class ROMScanner: ROMScanning {
 
         guard !groups.isEmpty else {
             progress(1.0)
-            return []
+            return ps3Games
         }
 
         var results: [DiscoveredROM] = []
@@ -134,7 +161,7 @@ final class ROMScanner: ROMScanning {
             progress(Double(index + 1) / Double(total))
         }
 
-        return results
+        return results + ps3Games
     }
 
     // MARK: - Entry-point resolution
@@ -305,6 +332,67 @@ final class ROMScanner: ROMScanning {
             if case .standalone(let type) = option.choice { return type }
             return nil
         }
+    }
+
+    // MARK: - PS3 extracted-disc folders
+
+    /// The relevant files of a PS3 game folder, whichever layout it uses.
+    private struct PS3GameLayout {
+        let paramSFO: URL   // metadata incl. the real title
+        let eboot: URL      // what RPCS3 launches
+        let icon: URL?      // official ICON0.PNG artwork, when present
+    }
+
+    /// Recognize a directory as a PS3 game root. Standard extracted-disc layout
+    /// (`D/PS3_GAME/PARAM.SFO`), or the JB-rip layout where PS3_GAME's contents
+    /// sit at the root (`D/PARAM.SFO` + `D/USRDIR/EBOOT.BIN`).
+    private func ps3GameLayout(at directory: URL) -> PS3GameLayout? {
+        let fileManager = FileManager.default
+
+        let gameDir = directory.appendingPathComponent("PS3_GAME", isDirectory: true)
+        let discSFO = gameDir.appendingPathComponent("PARAM.SFO")
+        if fileManager.fileExists(atPath: discSFO.path) {
+            let icon = gameDir.appendingPathComponent("ICON0.PNG")
+            return PS3GameLayout(
+                paramSFO: discSFO,
+                eboot: gameDir.appendingPathComponent("USRDIR", isDirectory: true)
+                    .appendingPathComponent("EBOOT.BIN"),
+                icon: fileManager.fileExists(atPath: icon.path) ? icon : nil
+            )
+        }
+
+        let rootSFO = directory.appendingPathComponent("PARAM.SFO")
+        let rootEboot = directory.appendingPathComponent("USRDIR", isDirectory: true)
+            .appendingPathComponent("EBOOT.BIN")
+        if fileManager.fileExists(atPath: rootSFO.path),
+           fileManager.fileExists(atPath: rootEboot.path) {
+            let icon = directory.appendingPathComponent("ICON0.PNG")
+            return PS3GameLayout(
+                paramSFO: rootSFO,
+                eboot: rootEboot,
+                icon: fileManager.fileExists(atPath: icon.path) ? icon : nil
+            )
+        }
+
+        return nil
+    }
+
+    /// Synthesize the single entry for a PS3 game root: launched via EBOOT.BIN,
+    /// titled from PARAM.SFO (falling back to the folder name), with the
+    /// bundled ICON0.PNG as an artwork hint.
+    private func makePS3ROM(gameRoot: URL) -> DiscoveredROM? {
+        guard let layout = ps3GameLayout(at: gameRoot),
+              let platform = database.platform(forFolderName: "ps3") else { return nil }
+        return DiscoveredROM(
+            url: layout.eboot,
+            fileSize: fileSize(of: layout.eboot),
+            romExtension: normalizedExtension(of: layout.eboot),
+            platform: platform,
+            candidateEmulators: candidateEmulators(for: platform),
+            platformAmbiguous: false,
+            titleHint: ParamSFO.title(of: layout.paramSFO) ?? gameRoot.lastPathComponent,
+            artworkHint: layout.icon
+        )
     }
 
     // MARK: - Helpers

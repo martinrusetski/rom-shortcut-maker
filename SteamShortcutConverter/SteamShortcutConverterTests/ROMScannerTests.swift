@@ -33,12 +33,17 @@ final class ROMScannerTests: XCTestCase {
 
     @discardableResult
     private func makeFile(_ relativePath: String, contents: String = "x") throws -> URL {
+        try makeBinaryFile(relativePath, data: contents.data(using: .utf8)!)
+    }
+
+    @discardableResult
+    private func makeBinaryFile(_ relativePath: String, data: Data) throws -> URL {
         let url = tempRoot.appendingPathComponent(relativePath)
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        try contents.data(using: .utf8)!.write(to: url)
+        try data.write(to: url)
         return url
     }
 
@@ -212,5 +217,53 @@ final class ROMScannerTests: XCTestCase {
         XCTAssertEqual(roms.count, 1, "three discs are one game")
         XCTAssertEqual(roms[0].platform?.id, "ps1")
         XCTAssertEqual(roms[0].discPaths.count, 3, "needs a generated playlist over 3 discs")
+    }
+
+    // MARK: - PS3 extracted-disc folders
+
+    func testPS3ExtractedDiscFolderIsOneGame() async throws {
+        let sfo = SFOFixture.make(entries: [("TITLE", "Odin Sphere Leifthrasir")])
+        try makeFile("PS3/Odin Sphere - Leifthrasir/PS3_DISC.SFB")
+        try makeBinaryFile("PS3/Odin Sphere - Leifthrasir/PS3_GAME/PARAM.SFO", data: sfo)
+        try makeBinaryFile("PS3/Odin Sphere - Leifthrasir/PS3_GAME/ICON0.PNG",
+                           data: Data([0x89, 0x50, 0x4E, 0x47]))
+        try makeFile("PS3/Odin Sphere - Leifthrasir/PS3_GAME/USRDIR/EBOOT.BIN", contents: "")
+
+        let roms = try await scan()
+        XCTAssertEqual(roms.count, 1, "the whole folder is one game")
+        let game = roms[0]
+        XCTAssertEqual(game.platform?.id, "ps3")
+        XCTAssertEqual(game.url.lastPathComponent, "EBOOT.BIN")
+        XCTAssertFalse(game.platformAmbiguous)
+        XCTAssertEqual(game.titleHint, "Odin Sphere Leifthrasir")
+        XCTAssertEqual(game.artworkHint?.lastPathComponent, "ICON0.PNG")
+        // The EBOOT.BIN must not also surface as a loose hint-less "EBOOT"
+        // .bin entry (skipDescendants consumed the folder).
+        XCTAssertFalse(roms.contains { $0.titleHint == nil })
+    }
+
+    func testPS3JBRipLayoutIsDetected() async throws {
+        // JB-rip: PS3_GAME's contents sit at the game root.
+        let sfo = SFOFixture.make(entries: [("TITLE", "Ridge Racer 7")])
+        try makeBinaryFile("PS3/RR7/PARAM.SFO", data: sfo)
+        try makeFile("PS3/RR7/USRDIR/EBOOT.BIN", contents: "")
+
+        let roms = try await scan()
+        XCTAssertEqual(roms.count, 1)
+        XCTAssertEqual(roms[0].platform?.id, "ps3")
+        XCTAssertEqual(roms[0].url.lastPathComponent, "EBOOT.BIN")
+        XCTAssertEqual(roms[0].titleHint, "Ridge Racer 7")
+        XCTAssertNil(roms[0].artworkHint, "no ICON0.PNG in this rip")
+    }
+
+    func testPS3TitleFallsBackToFolderNameOnBadSFO() async throws {
+        // A garbage PARAM.SFO still identifies the folder (standard layout),
+        // but the title falls back to the game-root folder name.
+        try makeFile("PS3/Some Game/PS3_GAME/PARAM.SFO", contents: "not an sfo")
+        try makeFile("PS3/Some Game/PS3_GAME/USRDIR/EBOOT.BIN", contents: "")
+
+        let roms = try await scan()
+        XCTAssertEqual(roms.count, 1)
+        XCTAssertEqual(roms[0].titleHint, "Some Game")
     }
 }

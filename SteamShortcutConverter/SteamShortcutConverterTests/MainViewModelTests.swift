@@ -312,6 +312,53 @@ final class MainViewModelTests: XCTestCase {
         XCTAssertNil(vm.currentConfiguration.gameOverrides[key]?.sgdbGameName)
     }
 
+    // MARK: - PS3 hints
+
+    /// A scanner title hint (PARAM.SFO TITLE) beats the filename-derived title,
+    /// and a bundled ICON0.PNG gets seeded into the artwork cache.
+    func testPS3TitleHintAndArtworkSeeding() async throws {
+        let icon = tempDir.appendingPathComponent("ICON0.PNG")
+        try Data([0x89, 0x50, 0x4E, 0x47]).write(to: icon)
+        let ps3ROM = DiscoveredROM(
+            url: URL(fileURLWithPath: "/ROMs/PS3/Odin Sphere/PS3_GAME/USRDIR/EBOOT.BIN"),
+            fileSize: 10,
+            romExtension: ".bin",
+            platform: Platform(id: "ps3", displayName: "PS3"),
+            candidateEmulators: [.rpcs3],
+            platformAmbiguous: false,
+            titleHint: "Odin Sphere Leifthrasir",
+            artworkHint: icon
+        )
+        let vm = makeViewModel(roms: [ps3ROM])
+        await vm.scan()
+        XCTAssertEqual(vm.games.count, 1)
+        XCTAssertEqual(vm.games[0].title, "Odin Sphere Leifthrasir", "hint wins over 'EBOOT'")
+        guard case .cached = vm.games[0].artworkStatus else {
+            return XCTFail("expected seeded artwork, got \(vm.games[0].artworkStatus)")
+        }
+        XCTAssertTrue(vm.hasArtwork(vm.games[0]))
+    }
+
+    /// A missing hint file is non-fatal: the scan succeeds, artwork stays absent.
+    func testMissingArtworkHintIsSkippedSilently() async {
+        let ps3ROM = DiscoveredROM(
+            url: URL(fileURLWithPath: "/ROMs/PS3/X/PS3_GAME/USRDIR/EBOOT.BIN"),
+            fileSize: 10,
+            romExtension: ".bin",
+            platform: Platform(id: "ps3", displayName: "PS3"),
+            candidateEmulators: [.rpcs3],
+            platformAmbiguous: false,
+            titleHint: "X",
+            artworkHint: URL(fileURLWithPath: "/no/such/ICON0.PNG")
+        )
+        let vm = makeViewModel(roms: [ps3ROM])
+        await vm.scan()
+        XCTAssertEqual(vm.games.count, 1)
+        if case .cached = vm.games[0].artworkStatus {
+            XCTFail("nothing should have been seeded from a missing file")
+        }
+    }
+
     // MARK: - Multi-disc
 
     func testMultiDiscScanGeneratesPlaylist() async {

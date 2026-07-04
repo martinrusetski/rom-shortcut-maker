@@ -243,6 +243,7 @@ final class MainViewModel: ObservableObject {
             captureDefaults()
             applyOverrides()
             applyCachedArtwork()
+            seedArtworkHints(from: discovered)
             sourceMode = .scan
             progressMessage = "\(games.count) ROMs across \(platformCount) platforms"
             persist()
@@ -262,10 +263,12 @@ final class MainViewModel: ObservableObject {
             }
         }
 
+        // The parser still runs for romMetadata, but a scanner-provided title
+        // hint (e.g. a PS3 PARAM.SFO TITLE) beats the filename-derived title.
         let metadata = filenameParser.parse(filename: rom.url.lastPathComponent)
         let platform = rom.platform ?? Platform(id: "unknown", displayName: "Unknown")
         var entry = GameEntry(
-            title: metadata.title,
+            title: rom.titleHint ?? metadata.title,
             romPath: romPath,
             romMetadata: metadata,
             platform: platform,
@@ -313,6 +316,31 @@ final class MainViewModel: ObservableObject {
             if artworkCache.hasICNS(for: key) || artworkCache.hasOriginal(for: key) {
                 games[index].artworkStatus = .cached(artworkCache.originalURL(for: key))
             }
+        }
+    }
+
+    /// Seed bundled artwork (e.g. a PS3 ICON0.PNG) into the cache for games
+    /// that have an artwork hint and no cached artwork yet. The hint lives on
+    /// `DiscoveredROM` (GameEntry doesn't carry it), so a transient
+    /// stableKey → URL map bridges the two. Failure to seed is non-fatal.
+    private func seedArtworkHints(from discovered: [DiscoveredROM]) {
+        var hintsByKey: [String: URL] = [:]
+        for (rom, game) in zip(discovered, games) {
+            if let hint = rom.artworkHint { hintsByKey[game.stableKey] = hint }
+        }
+        guard !hintsByKey.isEmpty else { return }
+
+        for index in games.indices {
+            let key = games[index].stableKey
+            guard let hint = hintsByKey[key] else { continue }
+            if case .cached = games[index].artworkStatus { continue }   // cache wins
+            guard let png = try? Data(contentsOf: hint) else { continue }
+            let metadata = ArtworkMetadata(
+                sgdbGameId: nil, sgdbImageId: nil, downloadedAt: Date(), sourceType: "bundled-icon")
+            guard let url = try? artworkCache.store(originalPNG: png, metadata: metadata, for: key) else {
+                continue
+            }
+            games[index].artworkStatus = .cached(url)
         }
     }
 
