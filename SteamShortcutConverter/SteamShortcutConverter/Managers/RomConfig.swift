@@ -19,6 +19,10 @@ struct GameOverride: Codable, Equatable {
     var args: String?
     var platform: String?      // platform id
     var imagePath: String?     // chosen launch image among alternates
+    /// Whether the user un-checked this game's include box. Persisted so the
+    /// choice survives rescan/relaunch. A nil value means "included" (the
+    /// default), keeping an otherwise-empty override equal to `GameOverride()`.
+    var excluded: Bool?
 }
 
 /// config.json v2 (ROM pipeline slice).

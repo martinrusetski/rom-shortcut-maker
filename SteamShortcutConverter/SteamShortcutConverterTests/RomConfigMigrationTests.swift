@@ -60,4 +60,15 @@ final class RomConfigMigrationTests: XCTestCase {
         let reloaded = try await DefaultRomConfigStore(directory: dir).load()
         XCTAssertEqual(reloaded, config)
     }
+
+    func testExcludedOnlyOverrideRoundTrips() throws {
+        let override = GameOverride(excluded: true)
+        let encoded = try JSONEncoder().encode(override)
+        let decoded = try JSONDecoder().decode(GameOverride.self, from: encoded)
+        XCTAssertEqual(decoded, override)
+        XCTAssertEqual(decoded.excluded, true)
+        // An override carrying only `excluded` is still non-empty, so the empty
+        // cleanup in updateOverride keeps it around.
+        XCTAssertNotEqual(override, GameOverride())
+    }
 }

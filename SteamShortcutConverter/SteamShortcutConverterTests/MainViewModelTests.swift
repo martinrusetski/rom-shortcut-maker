@@ -13,8 +13,10 @@ import XCTest
 
 final class FakeROMScanner: ROMScanning {
     var result: [DiscoveredROM]
+    private(set) var scanCallCount = 0
     init(_ result: [DiscoveredROM]) { self.result = result }
     func scan(directory: URL, progress: @escaping (Double) -> Void) async throws -> [DiscoveredROM] {
+        scanCallCount += 1
         progress(1.0)
         return result
     }
@@ -72,7 +74,8 @@ final class MainViewModelTests: XCTestCase {
         roms: [DiscoveredROM],
         store: InMemoryRomConfigStore = InMemoryRomConfigStore(),
         provider: ArtworkProvider? = nil,
-        generator: GameBundleGenerating? = nil
+        generator: GameBundleGenerating? = nil,
+        scanner: FakeROMScanner? = nil
     ) -> MainViewModel {
         let database = try! SystemDatabase()
         let fs = FakeAppDiscovering()
@@ -90,7 +93,7 @@ final class MainViewModelTests: XCTestCase {
         let viewModel = MainViewModel(
             database: database,
             configStore: store,
-            scanner: FakeROMScanner(roms),
+            scanner: scanner ?? FakeROMScanner(roms),
             emulatorConfig: emulatorConfig,
             artworkCache: ArtworkCache(baseDirectory: tempDir.appendingPathComponent("artcache")),
             artworkProvider: provider,
@@ -127,6 +130,40 @@ final class MainViewModelTests: XCTestCase {
         XCTAssertEqual(vm.outputDirectory, "/tmp/out")
         XCTAssertTrue(vm.removeOrphanedBundles)
         XCTAssertEqual(vm.steamGridDBApiKey, "abc")
+    }
+
+    /// A persisted scan directory that exists on disk should be rescanned on
+    /// `load()` so the list isn't empty after relaunch — exactly one scan.
+    func testLoadRescansPersistedDirectory() async throws {
+        let dir = tempDir.appendingPathComponent("library")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let config = AppConfigurationV2(sourceMode: "scan", lastScanDirectory: dir.path)
+        let scanner = FakeROMScanner([snesROM("/ROMs/SNES/Zelda.sfc")])
+        let vm = makeViewModel(roms: [], store: InMemoryRomConfigStore(config: config), scanner: scanner)
+        await vm.load()
+        XCTAssertEqual(scanner.scanCallCount, 1)
+        XCTAssertEqual(vm.games.count, 1)
+    }
+
+    /// A missing persisted directory must not trigger a scan (and must not crash).
+    func testLoadDoesNotRescanMissingDirectory() async {
+        let config = AppConfigurationV2(sourceMode: "scan", lastScanDirectory: "/no/such/dir")
+        let scanner = FakeROMScanner([snesROM("/ROMs/SNES/Zelda.sfc")])
+        let vm = makeViewModel(roms: [], store: InMemoryRomConfigStore(config: config), scanner: scanner)
+        await vm.load()
+        XCTAssertEqual(scanner.scanCallCount, 0)
+        XCTAssertTrue(vm.games.isEmpty)
+    }
+
+    /// Un-checking a game persists as an `excluded` override and survives a rescan.
+    func testDeselectionSurvivesRescan() async {
+        let store = InMemoryRomConfigStore()
+        let vm = makeViewModel(roms: [snesROM("/ROMs/SNES/Zelda.sfc")], store: store)
+        await vm.scan()
+        vm.setSelected(false, for: vm.games[0])
+        XCTAssertEqual(vm.currentConfiguration.gameOverrides[vm.games[0].stableKey]?.excluded, true)
+        await vm.scan()
+        XCTAssertFalse(vm.games[0].isSelected, "exclusion persists across a rescan")
     }
 
     // MARK: - Scan

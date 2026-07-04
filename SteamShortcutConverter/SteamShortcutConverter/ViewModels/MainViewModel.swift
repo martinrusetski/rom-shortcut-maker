@@ -132,6 +132,16 @@ final class MainViewModel: ObservableObject {
         } catch {
             errorMessage = "Failed to load configuration: \(error.localizedDescription)"
         }
+        // Restore the last library automatically so the list isn't empty on
+        // relaunch. Only the scan path is persisted (the .vdf path isn't), so
+        // VDF mode is left for the user to re-import.
+        var isDir: ObjCBool = false
+        if sourceMode == .scan,
+           !scanDirectory.isEmpty,
+           FileManager.default.fileExists(atPath: scanDirectory, isDirectory: &isDir),
+           isDir.boolValue {
+            await scan()
+        }
     }
 
     private func apply(_ config: AppConfigurationV2) {
@@ -293,6 +303,7 @@ final class MainViewModel: ObservableObject {
             if let imagePath = override.imagePath {
                 games[index].launchImage = URL(fileURLWithPath: imagePath)
             }
+            games[index].isSelected = !(override.excluded ?? false)
         }
     }
 
@@ -331,6 +342,7 @@ final class MainViewModel: ObservableObject {
 
     func setSelected(_ selected: Bool, for game: GameEntry) {
         updateGame(game.id) { $0.isSelected = selected }
+        updateOverride(game.stableKey) { $0.excluded = selected ? nil : true }
     }
 
     func setTitle(_ title: String, for game: GameEntry) {
