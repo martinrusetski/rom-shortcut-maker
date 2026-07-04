@@ -130,7 +130,11 @@ private struct GameListZone: View {
                     Section {
                         if isUnknown || !viewModel.isCollapsed(group.platform.id) {
                             ForEach(group.games) { game in
-                                GameListRow(game: game) { viewModel.setSelected($0, for: game) }
+                                GameListRow(
+                                    game: game,
+                                    onToggleInclude: { viewModel.setSelected($0, for: game) },
+                                    onInfo: { viewModel.propertiesGameID = game.id }
+                                )
                                     .tag(game.id)
                                     .contentShape(Rectangle())
                                     .onTapGesture(count: 2) { viewModel.propertiesGameID = game.id }

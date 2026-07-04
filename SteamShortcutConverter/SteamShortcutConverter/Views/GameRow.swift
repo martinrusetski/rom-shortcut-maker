@@ -134,6 +134,7 @@ struct PlatformSectionHeader: View {
 struct GameListRow: View {
     let game: GameEntry
     let onToggleInclude: (Bool) -> Void
+    let onInfo: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -157,6 +158,14 @@ struct GameListRow: View {
             Spacer(minLength: 8)
 
             statusView
+
+            Button(action: onInfo) {
+                Image(systemName: "info.circle")
+            }
+            .buttonStyle(.borderless)
+            .foregroundColor(.secondary)
+            .help("Game Properties")
+            .accessibilityLabel("Game Properties for \(game.title)")
         }
         .padding(.vertical, 3)
     }
