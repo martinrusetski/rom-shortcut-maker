@@ -89,6 +89,12 @@ final class SystemDatabaseTests: XCTestCase {
         XCTAssertNil(database.platform(forFolderName: "Games"))
     }
 
+    func testSegaModel2FolderAliasResolves() {
+        // The user's real folder is literally "Sega Model 2 Arcade".
+        XCTAssertEqual(database.platform(forFolderName: "Sega Model 2 Arcade")?.id, "sega-model2")
+        XCTAssertEqual(database.platform(forFolderName: "model2")?.id, "sega-model2")
+    }
+
     // MARK: - Extension inference (secondary signal, surfaces collisions)
 
     func testIsoExtensionSurfacesCollisions() {

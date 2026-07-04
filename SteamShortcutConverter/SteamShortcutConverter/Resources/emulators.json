@@ -179,6 +179,16 @@
       ]
     },
     {
+      "id": "sega-model2",
+      "displayName": "Sega Model 2",
+      "folderAliases": ["model 2", "model2", "sega model 2", "sega model 2 arcade"],
+      "romExtensions": [".zip"],
+      "libretroSystems": [],
+      "emulatorOptions": [
+        { "type": "standalone", "emulator": "MAME" }
+      ]
+    },
+    {
       "id": "dos",
       "displayName": "DOS",
       "folderAliases": ["dos", "msdos", "ms-dos"],
