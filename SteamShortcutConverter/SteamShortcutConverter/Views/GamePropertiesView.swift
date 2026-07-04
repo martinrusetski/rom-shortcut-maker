@@ -173,6 +173,8 @@ private struct ArtworkSection: View {
     @ObservedObject var viewModel: MainViewModel
     let game: GameEntry
 
+    @State private var showingMatchSheet = false
+
     var body: some View {
         Section("Artwork") {
             HStack(spacing: 12) {
@@ -194,12 +196,39 @@ private struct ArtworkSection: View {
                         Button("Remove") { viewModel.removeArtwork(for: game) }
                             .disabled(!viewModel.hasArtwork(game))
                     }
+                    Button("Match Manually…") { showingMatchSheet = true }
+                        .disabled(!viewModel.canFetchArtwork)
+                        .help(viewModel.canFetchArtwork
+                              ? "Search SteamGridDB and pick the correct game"
+                              : "Set a SteamGridDB API key in Settings first")
+                    if let matchedName = viewModel.matchedGameName(for: game) {
+                        HStack(spacing: 4) {
+                            Text("Matched: \(matchedName)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Button {
+                                viewModel.clearManualMatch(for: game)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                            }
+                            .buttonStyle(.borderless)
+                            .controlSize(.small)
+                            .foregroundColor(.secondary)
+                            .help("Clear match")
+                            .accessibilityLabel("Clear SteamGridDB match")
+                        }
+                    }
                     if case .failed(let message) = game.artworkStatus {
                         Text(message).font(.caption).foregroundColor(.orange)
                     }
                 }
                 Spacer()
             }
+        }
+        .sheet(isPresented: $showingMatchSheet) {
+            SGDBMatchSheet(viewModel: viewModel, game: game)
         }
     }
 
@@ -379,6 +408,109 @@ private struct LaunchSection: View {
                 Text("Launched via a generated .m3u playlist.")
                     .font(.caption2).foregroundColor(.secondary)
             }
+        }
+    }
+}
+
+// MARK: - Manual match sheet
+
+/// A modal for correcting a wrong SteamGridDB match: search by title, pick the
+/// right game, and (optionally) adopt its name as the game's title. Not a
+/// main-list row, so observing the ViewModel is fine here.
+private struct SGDBMatchSheet: View {
+    @ObservedObject var viewModel: MainViewModel
+    let game: GameEntry
+
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var searchTerm: String = ""
+    @State private var results: [SGDBGame] = []
+    @State private var selectedID: Int?
+    @State private var isSearching = false
+    @State private var hasSearched = false
+    @State private var useNameAsTitle = true
+
+    private var selectedMatch: SGDBGame? {
+        results.first { $0.id == selectedID }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Match “\(game.title)”")
+                .font(.headline)
+
+            HStack {
+                TextField("Search SteamGridDB", text: $searchTerm)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { search() }
+                Button("Search") { search() }
+                    .disabled(searchTerm.trimmingCharacters(in: .whitespaces).isEmpty || isSearching)
+            }
+
+            resultsList
+
+            Toggle("Also use matched name as title", isOn: $useNameAsTitle)
+
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Use This Match") { apply() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(selectedMatch == nil)
+            }
+        }
+        .padding()
+        .frame(width: 420, height: 420)
+        .task {
+            searchTerm = game.title
+            search()
+        }
+    }
+
+    @ViewBuilder
+    private var resultsList: some View {
+        if isSearching {
+            VStack {
+                Spacer()
+                ProgressView("Searching…")
+                Spacer()
+            }
+            .frame(maxWidth: .infinity)
+        } else if results.isEmpty {
+            VStack {
+                Spacer()
+                Text(hasSearched ? "No results" : "Search for a game to match")
+                    .foregroundColor(.secondary)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity)
+        } else {
+            List(results, id: \.id, selection: $selectedID) { result in
+                Text(result.name)
+            }
+            .border(Color.secondary.opacity(0.2))
+        }
+    }
+
+    private func search() {
+        let term = searchTerm.trimmingCharacters(in: .whitespaces)
+        guard !term.isEmpty else { return }
+        isSearching = true
+        Task {
+            let found = await viewModel.searchArtworkMatches(term: term)
+            results = found
+            selectedID = found.first?.id
+            hasSearched = true
+            isSearching = false
+        }
+    }
+
+    private func apply() {
+        guard let match = selectedMatch else { return }
+        Task {
+            await viewModel.applyManualMatch(match, setTitle: useNameAsTitle, for: game)
+            dismiss()
         }
     }
 }

@@ -23,7 +23,13 @@ final class FakeROMScanner: ROMScanning {
 }
 
 final class FakeArtworkProvider: ArtworkProvider {
-    func searchGame(term: String) async throws -> [SGDBGame] { [SGDBGame(id: 1, name: term)] }
+    let match: SGDBGame
+    private(set) var searchCallCount = 0
+    init(match: SGDBGame = SGDBGame(id: 99, name: "Best Match")) { self.match = match }
+    func searchGame(term: String) async throws -> [SGDBGame] {
+        searchCallCount += 1
+        return [match]
+    }
     func getIcons(gameId: Int) async throws -> [SGDBImage] {
         [SGDBImage(id: 11, url: URL(string: "https://x/icon.png")!, thumb: nil, score: 5, mime: "image/png")]
     }
@@ -238,6 +244,72 @@ final class MainViewModelTests: XCTestCase {
         } else {
             XCTFail("expected cached artwork, got \(vm.games[0].artworkStatus)")
         }
+    }
+
+    /// Auto-fetch records the match id/name and adopts the SGDB name as the title
+    /// when the game has no custom title yet.
+    func testAutoFetchRecordsMatchAndAppliesName() async {
+        let provider = FakeArtworkProvider(match: SGDBGame(id: 77, name: "Chrono Trigger"))
+        let vm = makeViewModel(roms: [snesROM("/ROMs/SNES/ct.sfc")], provider: provider)
+        await vm.scan()
+        let key = vm.games[0].stableKey
+        await vm.fetchArtwork(for: vm.games[0])
+        XCTAssertEqual(provider.searchCallCount, 1)
+        XCTAssertEqual(vm.currentConfiguration.gameOverrides[key]?.sgdbGameId, 77)
+        XCTAssertEqual(vm.currentConfiguration.gameOverrides[key]?.sgdbGameName, "Chrono Trigger")
+        XCTAssertEqual(vm.games[0].title, "Chrono Trigger", "SGDB name adopted as title")
+        XCTAssertEqual(vm.matchedGameName(for: vm.games[0]), "Chrono Trigger")
+    }
+
+    /// Auto-fetch must never overwrite a user's custom title, though it still
+    /// records the match.
+    func testAutoFetchDoesNotStompCustomTitle() async {
+        let provider = FakeArtworkProvider(match: SGDBGame(id: 77, name: "SGDB Name"))
+        let vm = makeViewModel(roms: [snesROM("/ROMs/SNES/ct.sfc")], provider: provider)
+        await vm.scan()
+        vm.setTitle("My Custom", for: vm.games[0])
+        let key = vm.games[0].stableKey
+        await vm.fetchArtwork(for: vm.games[0])
+        XCTAssertEqual(vm.games[0].title, "My Custom", "custom rename preserved")
+        XCTAssertEqual(vm.currentConfiguration.gameOverrides[key]?.sgdbGameId, 77)
+    }
+
+    /// A pinned match id makes fetch go straight to the id — no title search.
+    func testFetchHonorsPinnedMatchIdWithoutSearching() async {
+        let provider = FakeArtworkProvider()
+        let vm = makeViewModel(roms: [snesROM("/ROMs/SNES/Zelda.sfc")], provider: provider)
+        await vm.scan()
+        await vm.applyManualMatch(SGDBGame(id: 5, name: "Manual"), setTitle: false, for: vm.games[0])
+        XCTAssertEqual(provider.searchCallCount, 0, "manual match skips the title search")
+        XCTAssertEqual(vm.currentConfiguration.gameOverrides[vm.games[0].stableKey]?.sgdbGameId, 5)
+        // A subsequent plain fetch also honors the pinned id.
+        await vm.fetchArtwork(for: vm.games[0])
+        XCTAssertEqual(provider.searchCallCount, 0)
+    }
+
+    /// applyManualMatch with setTitle overwrites an existing custom title and
+    /// persists both match fields.
+    func testApplyManualMatchOverwritesTitle() async {
+        let vm = makeViewModel(roms: [snesROM("/ROMs/SNES/Zelda.sfc")], provider: FakeArtworkProvider())
+        await vm.scan()
+        vm.setTitle("Old", for: vm.games[0])
+        await vm.applyManualMatch(SGDBGame(id: 3, name: "New Name"), setTitle: true, for: vm.games[0])
+        let key = vm.games[0].stableKey
+        XCTAssertEqual(vm.games[0].title, "New Name")
+        XCTAssertEqual(vm.currentConfiguration.gameOverrides[key]?.sgdbGameId, 3)
+        XCTAssertEqual(vm.currentConfiguration.gameOverrides[key]?.sgdbGameName, "New Name")
+    }
+
+    /// Clearing a match removes both match fields.
+    func testClearManualMatchRemovesFields() async {
+        let vm = makeViewModel(roms: [snesROM("/ROMs/SNES/Zelda.sfc")], provider: FakeArtworkProvider())
+        await vm.scan()
+        await vm.applyManualMatch(SGDBGame(id: 3, name: "X"), setTitle: false, for: vm.games[0])
+        let key = vm.games[0].stableKey
+        XCTAssertNotNil(vm.currentConfiguration.gameOverrides[key]?.sgdbGameId)
+        vm.clearManualMatch(for: vm.games[0])
+        XCTAssertNil(vm.currentConfiguration.gameOverrides[key]?.sgdbGameId)
+        XCTAssertNil(vm.currentConfiguration.gameOverrides[key]?.sgdbGameName)
     }
 
     // MARK: - Multi-disc

@@ -405,6 +405,10 @@ final class MainViewModel: ObservableObject {
         return SteamGridDBClient(apiKey: steamGridDBApiKey)
     }
 
+    /// Whether artwork can be fetched (a provider is available — API key set, or
+    /// an injected provider in tests). Drives disabled state in the UI.
+    var canFetchArtwork: Bool { artworkProvider() != nil }
+
     func fetchArtwork(for game: GameEntry) async {
         guard let provider = artworkProvider() else {
             errorMessage = "Set a SteamGridDB API key in Settings first."
@@ -412,7 +416,31 @@ final class MainViewModel: ObservableObject {
         }
         updateGame(game.id) { $0.artworkStatus = .downloading }
         do {
-            if let fetched = try await provider.fetchArtwork(forTitle: game.title) {
+            let existing = config.gameOverrides[game.stableKey]
+            let fetched: FetchedArtwork?
+            if let pinnedId = existing?.sgdbGameId {
+                // A pinned match (manual, or a previously recorded automatic hit)
+                // skips the title search so refetches stay on the same game.
+                fetched = try await provider.fetchArtwork(
+                    for: SGDBGame(id: pinnedId, name: existing?.sgdbGameName ?? game.title))
+            } else if let match = try await provider.bestMatch(forTitle: game.title) {
+                let hadCustomTitle = existing?.customTitle != nil
+                // Record the match so future refetches are stable.
+                updateOverride(game.stableKey) {
+                    $0.sgdbGameId = match.id
+                    $0.sgdbGameName = match.name
+                }
+                // Adopt the proper game name as the title, but never stomp an
+                // existing user rename. setTitle persists it as a title override.
+                if !hadCustomTitle {
+                    setTitle(match.name, for: game)
+                }
+                fetched = try await provider.fetchArtwork(for: match)
+            } else {
+                fetched = nil
+            }
+
+            if let fetched {
                 let metadata = ArtworkMetadata(
                     sgdbGameId: fetched.sgdbGameId,
                     sgdbImageId: fetched.sgdbImageId,
@@ -426,6 +454,50 @@ final class MainViewModel: ObservableObject {
             }
         } catch {
             updateGame(game.id) { $0.artworkStatus = .failed(error.localizedDescription) }
+        }
+    }
+
+    /// Search SteamGridDB for candidate games to match manually. Returns `[]` and
+    /// sets `errorMessage` on failure or when no provider is configured.
+    func searchArtworkMatches(term: String) async -> [SGDBGame] {
+        guard let provider = artworkProvider() else {
+            errorMessage = "Set a SteamGridDB API key in Settings first."
+            return []
+        }
+        do {
+            return try await provider.searchGame(term: term)
+        } catch {
+            errorMessage = "Search failed: \(error.localizedDescription)"
+            return []
+        }
+    }
+
+    /// Pin a user-chosen SteamGridDB match: record its id/name, optionally adopt
+    /// its name as the title (an explicit action, so this DOES overwrite an
+    /// existing custom title), then fetch artwork for the pinned id.
+    func applyManualMatch(_ match: SGDBGame, setTitle: Bool, for game: GameEntry) async {
+        updateOverride(game.stableKey) {
+            $0.sgdbGameId = match.id
+            $0.sgdbGameName = match.name
+        }
+        if setTitle {
+            self.setTitle(match.name, for: game)
+        }
+        await fetchArtwork(for: game)
+    }
+
+    /// The pinned SteamGridDB match name for a game, if any.
+    func matchedGameName(for game: GameEntry) -> String? {
+        config.gameOverrides[game.stableKey]?.sgdbGameName
+    }
+
+    /// Clear a pinned match so the next fetch searches by title again. Leaves the
+    /// title and other override fields untouched (the match isn't a scanned
+    /// default, so it has no `OverrideField` reset case).
+    func clearManualMatch(for game: GameEntry) {
+        updateOverride(game.stableKey) {
+            $0.sgdbGameId = nil
+            $0.sgdbGameName = nil
         }
     }
 

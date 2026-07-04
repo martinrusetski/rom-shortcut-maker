@@ -52,13 +52,16 @@ protocol ArtworkProvider {
 }
 
 extension ArtworkProvider {
-    /// Artwork selection strategy: search by title → best PNG icon → fall back
+    /// The first autocomplete hit for a title (the automatic-match identity), or
+    /// nil if the search returned nothing.
+    func bestMatch(forTitle title: String) async throws -> SGDBGame? {
+        try await searchGame(term: title).first
+    }
+
+    /// Artwork selection strategy for a known game id: best PNG icon → fall back
     /// to a grid (SGDB icon coverage is thin for retro titles) → download.
     /// Returns nil if nothing usable was found.
-    func fetchArtwork(forTitle title: String) async throws -> FetchedArtwork? {
-        let games = try await searchGame(term: title)
-        guard let game = games.first else { return nil }
-
+    func fetchArtwork(for game: SGDBGame) async throws -> FetchedArtwork? {
         let icons = try await getIcons(gameId: game.id)
         let pngIcons = icons.filter { $0.isPNG }.sorted { ($0.score ?? 0) > ($1.score ?? 0) }
         if let icon = pngIcons.first {
@@ -73,5 +76,11 @@ extension ArtworkProvider {
         }
 
         return nil
+    }
+
+    /// Convenience composition: search by title, then fetch for the best match.
+    func fetchArtwork(forTitle title: String) async throws -> FetchedArtwork? {
+        guard let game = try await bestMatch(forTitle: title) else { return nil }
+        return try await fetchArtwork(for: game)
     }
 }

@@ -23,6 +23,11 @@ struct GameOverride: Codable, Equatable {
     /// choice survives rescan/relaunch. A nil value means "included" (the
     /// default), keeping an otherwise-empty override equal to `GameOverride()`.
     var excluded: Bool?
+    /// SteamGridDB game id pinned by a manual (or first successful automatic)
+    /// match, so artwork refetches stay stable instead of re-searching the title.
+    var sgdbGameId: Int?
+    /// The matched SteamGridDB game's display name, kept for the Properties window.
+    var sgdbGameName: String?
 }
 
 /// config.json v2 (ROM pipeline slice).
