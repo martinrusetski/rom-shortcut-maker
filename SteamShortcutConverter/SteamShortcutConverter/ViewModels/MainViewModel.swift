@@ -62,7 +62,7 @@ final class MainViewModel: ObservableObject {
     private let incrementalManager: IncrementalUpdateManager
     private let vdfBridge: VDFToGameEntryBridge
     private let playlistManager: PlaylistWriting
-    private let filenameParser = ROMFilenameParser()
+    private let filenameParser: ROMFilenameParser
     private let shortcutFilter: ShortcutFilter = DefaultShortcutFilter()
 
     private var config = AppConfigurationV2.default
@@ -101,6 +101,7 @@ final class MainViewModel: ObservableObject {
         self.vdfBridge = vdfBridge
         self.playlistManager = playlistManager
         self.incrementalManager = incrementalManager
+        self.filenameParser = ROMFilenameParser(platformAliases: database.allFolderAliases)
     }
 
     /// Production wiring.
@@ -274,7 +275,8 @@ final class MainViewModel: ObservableObject {
             platform: platform,
             source: .romScan,
             additionalFiles: rom.memberFiles,
-            alternateImages: rom.alternateImages
+            alternateImages: rom.alternateImages,
+            discCount: rom.discCount
         )
         if rom.platform != nil, let choice = emulatorConfig.defaultChoice(for: platform) {
             assignEmulator(&entry, choice: choice)

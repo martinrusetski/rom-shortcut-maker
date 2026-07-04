@@ -163,6 +163,17 @@ final class SystemDatabase {
         platformRecords.map { Platform(id: $0.id, displayName: $0.displayName) }
     }
 
+    /// Every platform folder alias (lowercased), across all platforms. Used by
+    /// the filename parser to recognize and strip platform-name tags like
+    /// `[GameCube]` or `(Nintendo Wii)` from titles.
+    var allFolderAliases: Set<String> {
+        var result: Set<String> = []
+        for record in platformRecords {
+            for alias in record.folderAliases { result.insert(alias.lowercased()) }
+        }
+        return result
+    }
+
     /// PRIMARY platform signal: match a (case-insensitive) directory name
     /// against platform folder aliases.
     func platform(forFolderName name: String) -> Platform? {

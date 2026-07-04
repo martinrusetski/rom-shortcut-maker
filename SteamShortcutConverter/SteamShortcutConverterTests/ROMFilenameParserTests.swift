@@ -55,6 +55,43 @@ final class ROMFilenameParserTests: XCTestCase {
         XCTAssertEqual(m.region, "USA")           // first canonical region
     }
 
+    // MARK: - Video-standard / region tags (PAL / NTSC)
+
+    func testPALBracketStripped() {
+        let m = parser.parse(filename: "Some Game [PAL].iso")
+        XCTAssertEqual(m.title, "Some Game")
+        XCTAssertEqual(m.region, "Europe")
+    }
+
+    func testNTSCVariantParenthetical() {
+        let m = parser.parse(filename: "Some Game (NTSC-J).iso")
+        XCTAssertEqual(m.title, "Some Game")
+        XCTAssertEqual(m.region, "Japan")
+    }
+
+    // MARK: - Platform-name tags
+
+    /// The parser must strip bracketed platform names so they don't leak into
+    /// the title (and, downstream, poison the SteamGridDB autocomplete match).
+    func testPlatformBracketTagsStripped() {
+        let parser = ROMFilenameParser(platformAliases: ["gamecube", "nintendo wii"])
+
+        let gc = parser.parse(filename: "[GameCube][PAL].Metroid.Prime.rvz")
+        XCTAssertEqual(gc.title, "Metroid Prime")   // dots normalized, tags gone
+        XCTAssertEqual(gc.region, "Europe")
+
+        let wii = parser.parse(filename: "[Nintendo Wii] Super Mario Galaxy 2 [NTSC].wbfs")
+        XCTAssertEqual(wii.title, "Super Mario Galaxy 2")
+        XCTAssertEqual(wii.region, "USA")
+    }
+
+    /// Without injected aliases, platform names are left in the title (the
+    /// parser stays conservative — it only strips what it positively knows).
+    func testPlatformTagsKeptWhenNoAliases() {
+        let m = parser.parse(filename: "[GameCube] Metroid Prime.rvz")
+        XCTAssertEqual(m.title, "[GameCube] Metroid Prime")
+    }
+
     // MARK: - Languages
 
     func testMultiLanguage() {
@@ -147,6 +184,26 @@ final class ROMFilenameParserTests: XCTestCase {
         let m = parser.parse(filename: "Cool Game [xyz123].nes")
         XCTAssertEqual(m.title, "Cool Game [xyz123]")
         XCTAssertTrue(m.flags.isEmpty)
+    }
+
+    // MARK: - Switch title-ID / version brackets
+
+    func testSwitchTitleIDAndVersionStripped() {
+        let m = parser.parse(filename: "Tomodachi Life Living the Dream [010051F0207B2000][v0].nsp")
+        XCTAssertEqual(m.title, "Tomodachi Life Living the Dream")
+        XCTAssertEqual(m.version, "v0")
+    }
+
+    func testSwitchUpdateFileMatchesBaseTitle() {
+        let base = parser.parse(filename: "Tomodachi Life Living the Dream [010051F0207B2000][v0].nsp")
+        let update = parser.parse(filename: "Tomodachi Life Living the Dream [010051F0207B2800][v131072].nsp")
+        XCTAssertEqual(base.title, update.title, "base and update collapse to one title for grouping")
+    }
+
+    func testNonHexSixteenCharBracketKept() {
+        // Only 16-hex-digit brackets are title IDs; other 16-char brackets stay.
+        let m = parser.parse(filename: "Game [GHIJKLMNOPQRSTUV].nsp")
+        XCTAssertEqual(m.title, "Game [GHIJKLMNOPQRSTUV]")
     }
 
     // MARK: - Underscore / whitespace normalization

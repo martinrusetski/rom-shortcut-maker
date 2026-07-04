@@ -28,6 +28,10 @@ struct DiscoveredROM: Equatable {
     /// .m3u — a playlist must be generated. Empty for single-disc games and for
     /// games that already have an .m3u (whose url points at that .m3u).
     let discPaths: [URL]
+    /// Number of discs when this entry is a multi-disc playlist (generated or a
+    /// pre-existing .m3u), else nil. This counts *discs*, not the flattened
+    /// track/member files in `memberFiles`.
+    let discCount: Int?
 
     // MARK: Metadata hints
     /// A better title than the filename can provide (e.g. the PARAM.SFO TITLE
@@ -47,6 +51,7 @@ struct DiscoveredROM: Equatable {
         memberFiles: [URL] = [],
         alternateImages: [URL] = [],
         discPaths: [URL] = [],
+        discCount: Int? = nil,
         titleHint: String? = nil,
         artworkHint: URL? = nil
     ) {
@@ -59,6 +64,7 @@ struct DiscoveredROM: Equatable {
         self.memberFiles = memberFiles
         self.alternateImages = alternateImages
         self.discPaths = discPaths
+        self.discCount = discCount
         self.titleHint = titleHint
         self.artworkHint = artworkHint
     }
@@ -87,10 +93,11 @@ final class ROMScanner: ROMScanning {
     }
 
     private let database: SystemDatabase
-    private let filenameParser = ROMFilenameParser()
+    private let filenameParser: ROMFilenameParser
 
     init(database: SystemDatabase) {
         self.database = database
+        self.filenameParser = ROMFilenameParser(platformAliases: database.allFolderAliases)
     }
 
     func scan(directory: URL,
@@ -228,6 +235,26 @@ final class ROMScanner: ROMScanning {
         let platformInfo = resolvePlatform(for: first, root: root)
         let platformId = platformInfo.platform?.id ?? "unknown"
 
+        // Nintendo Switch: a base game plus its update/DLC files live side by side
+        // in one folder and share a title. Launch the base; keep the add-ons as
+        // member files rather than surfacing them as duplicate games.
+        if platformId == "switch", group.count > 1 {
+            let primary = group.first { SwitchTitle.contentType(ofFilename: $0.lastPathComponent) == .base }
+                ?? group[0]
+            let addOns = group.filter { $0 != primary }
+            return DiscoveredROM(
+                url: primary,
+                fileSize: fileSize(of: primary),
+                romExtension: normalizedExtension(of: primary),
+                platform: platformInfo.platform,
+                candidateEmulators: candidateEmulators(for: platformInfo.platform),
+                platformAmbiguous: platformInfo.ambiguous,
+                memberFiles: dedupe(addOns),
+                alternateImages: [],
+                discPaths: []
+            )
+        }
+
         // Bucket the group's entry points by disc number.
         var byDisc: [Int?: [URL]] = [:]
         var discOrder: [Int?] = []
@@ -261,7 +288,8 @@ final class ROMScanner: ROMScanning {
                 platformAmbiguous: platformInfo.ambiguous,
                 memberFiles: dedupe(allMembers),
                 alternateImages: [],
-                discPaths: discPaths
+                discPaths: discPaths,
+                discCount: discPaths.count
             )
         }
 
@@ -273,6 +301,11 @@ final class ROMScanner: ROMScanning {
         let alternates = images.filter { $0 != primary }
         var allMembers = members(of: primary)
         for alternate in alternates { allMembers.append(contentsOf: members(of: alternate)) }
+        // A pre-existing .m3u is already multi-disc; its disc count is the number
+        // of playlist entries, not the flattened member files.
+        let existingPlaylistDiscCount = DiscImage.isPlaylist(primary)
+            ? DiscImage.entries(ofPlaylist: primary).count
+            : nil
         return DiscoveredROM(
             url: primary,
             fileSize: fileSize(of: primary),
@@ -282,7 +315,8 @@ final class ROMScanner: ROMScanning {
             platformAmbiguous: platformInfo.ambiguous,
             memberFiles: dedupe(allMembers),
             alternateImages: alternates,
-            discPaths: []
+            discPaths: [],
+            discCount: existingPlaylistDiscCount
         )
     }
 

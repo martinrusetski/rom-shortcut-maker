@@ -16,12 +16,33 @@ final class ROMFilenameParser {
 
     // MARK: - Knowledge
 
+    /// Platform folder aliases (lowercased) recognized as strippable tags, e.g.
+    /// `[GameCube]`, `(Nintendo Wii)`. Injected from the SystemDatabase so the
+    /// parser and the scanner share one source of truth for platform names.
+    private let platformAliases: Set<String>
+
+    init(platformAliases: Set<String> = []) {
+        self.platformAliases = platformAliases
+    }
+
     /// Single-letter GoodTools region codes → canonical region name.
     private let regionLetters: [String: String] = [
         "U": "USA",
         "E": "Europe",
         "J": "Japan",
         "W": "World"
+    ]
+
+    /// Video-standard / region tags (lowercased) → canonical region, recognized
+    /// in both parentheses and brackets, e.g. `[PAL]`, `(NTSC-U)`.
+    private let regionStandards: [String: String] = [
+        "pal": "Europe",
+        "ntsc": "USA",
+        "ntsc-u": "USA",
+        "ntsc-j": "Japan",
+        "ntsc-e": "Europe",
+        "ntsc-c": "China",
+        "secam": "Europe"
     ]
 
     /// Recognized region names (lowercased) for parenthetical region tags.
@@ -74,7 +95,7 @@ final class ROMFilenameParser {
             let inner = String(full.dropFirst().dropLast()).trimmingCharacters(in: .whitespaces)
             let recognized: Bool
             if full.hasPrefix("[") {
-                recognized = classifyBracket(inner, flags: &flags)
+                recognized = classifyBracket(inner, region: &region, version: &version, flags: &flags)
             } else {
                 recognized = classifyParenthetical(
                     inner,
@@ -123,8 +144,16 @@ final class ROMFilenameParser {
         }
 
         var title = result.replacingOccurrences(of: "_", with: " ")
+        // Scene releases use dots as word separators (e.g. "Metroid.Prime").
+        // When what's left has no spaces but does have dots, treat dots as
+        // spaces. Titles that already contain spaces (e.g. "Dr. Mario") keep
+        // their dots.
+        let stripped = title.trimmingCharacters(in: .whitespaces)
+        if !stripped.contains(" ") && stripped.contains(".") {
+            title = title.replacingOccurrences(of: ".", with: " ")
+        }
         title = title.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-        return title.trimmingCharacters(in: .whitespaces)
+        return title.trimmingCharacters(in: CharacterSet(charactersIn: " ."))
     }
 
     // MARK: - Classification
@@ -164,6 +193,12 @@ final class ROMFilenameParser {
             return true
         }
 
+        // Video-standard / region tags, e.g. (PAL), (NTSC-U).
+        if let canonical = regionStandards[lower] {
+            if region == nil { region = canonical }
+            return true
+        }
+
         // Region / language lists (comma-separated).
         let parts = trimmed
             .split(separator: ",")
@@ -182,16 +217,49 @@ final class ROMFilenameParser {
             }
         }
 
+        // Platform-name tags, e.g. (GameCube), (Nintendo Wii).
+        if platformAliases.contains(lower) { return true }
+
         // Unrecognized: leave it in the title.
         return false
     }
 
     /// Classify a bracket group's inner content. Returns true if recognized.
-    private func classifyBracket(_ content: String, flags: inout [String]) -> Bool {
+    private func classifyBracket(
+        _ content: String,
+        region: inout String?,
+        version: inout String?,
+        flags: inout [String]
+    ) -> Bool {
         let lower = content.lowercased()
-        guard bracketFlags.contains(lower) else { return false }
-        if !flags.contains(lower) { flags.append(lower) }
-        return true
+        if bracketFlags.contains(lower) {
+            if !flags.contains(lower) { flags.append(lower) }
+            return true
+        }
+        // Video-standard / region tags, e.g. [PAL], [NTSC-J].
+        if let canonical = regionStandards[lower] {
+            if region == nil { region = canonical }
+            return true
+        }
+        // Platform-name tags, e.g. [GameCube], [Nintendo Wii].
+        if platformAliases.contains(lower) { return true }
+        // Nintendo Switch title ID, e.g. [010051F0207B2000] — strip from the
+        // title so a base game and its update/DLC share one display name.
+        if isSwitchTitleID(content) { return true }
+        // Bracketed version, e.g. [v0], [v131072] (Switch dumps).
+        if isBracketVersion(content) {
+            if version == nil { version = content }
+            return true
+        }
+        return false
+    }
+
+    private func isSwitchTitleID(_ content: String) -> Bool {
+        content.count == 16 && content.allSatisfy(\.isHexDigit)
+    }
+
+    private func isBracketVersion(_ content: String) -> Bool {
+        content.range(of: "^v\\d+$", options: [.regularExpression, .caseInsensitive]) != nil
     }
 
     // MARK: - Token helpers

@@ -549,6 +549,10 @@ struct GameEntry: Identifiable, Codable, Equatable {
     /// Track / disc member files referenced by `romPath` (a .cue's tracks, an
     /// .m3u's discs). Hashed for change detection; not launched directly.
     var additionalFiles: [URL]
+    /// Number of discs when `romPath` is a multi-disc playlist, else nil. This
+    /// is the *disc* count, distinct from `additionalFiles.count`, which also
+    /// includes per-disc track files.
+    var discCount: Int?
     /// Other launchable images of the same disc (e.g. a .chd alongside a .cue)
     /// the user can switch to.
     var alternateImages: [URL]
@@ -593,7 +597,8 @@ struct GameEntry: Identifiable, Codable, Equatable {
         source: GameSource = .romScan,
         additionalFiles: [URL] = [],
         alternateImages: [URL] = [],
-        launchImage: URL? = nil
+        launchImage: URL? = nil,
+        discCount: Int? = nil
     ) {
         self.id = id
         self.title = title
@@ -609,5 +614,6 @@ struct GameEntry: Identifiable, Codable, Equatable {
         self.additionalFiles = additionalFiles
         self.alternateImages = alternateImages
         self.launchImage = launchImage
+        self.discCount = discCount
     }
 }

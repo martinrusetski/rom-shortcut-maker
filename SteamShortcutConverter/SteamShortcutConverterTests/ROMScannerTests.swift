@@ -203,6 +203,7 @@ final class ROMScannerTests: XCTestCase {
         XCTAssertEqual(roms.count, 1)
         XCTAssertEqual(roms[0].url.pathExtension, "m3u")
         XCTAssertTrue(roms[0].discPaths.isEmpty, "existing m3u needs no generated playlist")
+        XCTAssertEqual(roms[0].discCount, 2, "disc count is the m3u's entries, not member files")
         // The disc cues are members, not separate games.
         XCTAssertFalse(roms.contains { $0.url.pathExtension == "cue" })
     }
@@ -217,6 +218,56 @@ final class ROMScannerTests: XCTestCase {
         XCTAssertEqual(roms.count, 1, "three discs are one game")
         XCTAssertEqual(roms[0].platform?.id, "ps1")
         XCTAssertEqual(roms[0].discPaths.count, 3, "needs a generated playlist over 3 discs")
+        XCTAssertEqual(roms[0].discCount, 3, "disc count matches the number of discs")
+    }
+
+    func testMultiDiscCueDiscCountCountsDiscsNotTracks() async throws {
+        // Panzer Dragoon Saga: 4 discs, each a cue referencing several bin tracks,
+        // no .m3u. The disc count must be 4, not the ~17 flattened member files.
+        for disc in 1...4 {
+            var cue = ""
+            for track in 1...4 {
+                let bin = "Panzer Dragoon Saga (Disc \(disc)) (Track \(track)).bin"
+                try makeFile("Saturn/Panzer/\(bin)")
+                cue += "FILE \"\(bin)\" BINARY\n  TRACK 0\(track) \(track == 1 ? "MODE1/2352" : "AUDIO")\n    INDEX 01 00:00:00\n"
+            }
+            try makeFile("Saturn/Panzer/Panzer Dragoon Saga (Disc \(disc)).cue", contents: cue)
+        }
+
+        let roms = try await scan()
+        XCTAssertEqual(roms.count, 1, "four discs are one game")
+        XCTAssertEqual(roms[0].discPaths.count, 4)
+        XCTAssertEqual(roms[0].discCount, 4, "disc count is the number of discs, not track members")
+        XCTAssertGreaterThan(roms[0].memberFiles.count, 4, "member files still flatten every track")
+    }
+
+    // MARK: - Switch base + update/DLC
+
+    func testSwitchBaseAndUpdateCollapseToOneGame() async throws {
+        // Base title ID ends in ...2000; the update is ...2800 (base + 0x800).
+        try makeFile("Switch/Tomodachi Life/Tomodachi Life [010051F0207B2000][v0].nsp")
+        try makeFile("Switch/Tomodachi Life/Tomodachi Life [010051F0207B2800][v131072].nsp")
+
+        let roms = try await scan()
+        XCTAssertEqual(roms.count, 1, "base + update is one game, not two duplicates")
+        let game = roms[0]
+        XCTAssertEqual(game.platform?.id, "switch")
+        XCTAssertTrue(game.url.lastPathComponent.contains("010051F0207B2000"),
+                      "the base game is the launch target")
+        XCTAssertEqual(game.memberFiles.count, 1, "the update is a member file, not a game")
+        XCTAssertTrue(game.memberFiles[0].lastPathComponent.contains("010051F0207B2800"))
+    }
+
+    func testSwitchBaseChosenRegardlessOfScanOrder() async throws {
+        // DLC (...3000) present too; still exactly one game launched from the base.
+        try makeFile("Switch/Game X/Game X [0100AAAA00003000][v0].nsp")   // DLC
+        try makeFile("Switch/Game X/Game X [0100AAAA00002800][v65536].nsp") // update
+        try makeFile("Switch/Game X/Game X [0100AAAA00002000][v0].nsp")   // base
+
+        let roms = try await scan()
+        XCTAssertEqual(roms.count, 1)
+        XCTAssertTrue(roms[0].url.lastPathComponent.contains("0100AAAA00002000"))
+        XCTAssertEqual(roms[0].memberFiles.count, 2)
     }
 
     // MARK: - PS3 extracted-disc folders

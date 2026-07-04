@@ -176,8 +176,9 @@ struct GameListRow: View {
     }
 
     private var discCount: Int? {
-        guard game.launchPath.pathExtension.lowercased() == "m3u" else { return nil }
-        return game.additionalFiles.isEmpty ? nil : game.additionalFiles.count
+        guard game.launchPath.pathExtension.lowercased() == "m3u",
+              let count = game.discCount, count > 0 else { return nil }
+        return count
     }
 
     @ViewBuilder
