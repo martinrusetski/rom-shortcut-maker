@@ -34,6 +34,9 @@ struct AppConfigurationV2: Codable, Equatable {
     /// v1 custom names (keyed by Steam appID), preserved through migration so they
     /// can reattach on the first VDF re-import.
     var legacyCustomNames: [UInt32: String]
+    /// Platform ids whose list section the user has collapsed. Persisted so the
+    /// expand/collapse state survives relaunch.
+    var collapsedPlatforms: Set<String>
 
     init(
         version: Int = 2,
@@ -44,7 +47,8 @@ struct AppConfigurationV2: Codable, Equatable {
         steamGridDBApiKey: String? = nil,
         gameOverrides: [String: GameOverride] = [:],
         lastConversionDate: Date? = nil,
-        legacyCustomNames: [UInt32: String] = [:]
+        legacyCustomNames: [UInt32: String] = [:],
+        collapsedPlatforms: Set<String> = []
     ) {
         self.version = version
         self.sourceMode = sourceMode
@@ -55,6 +59,25 @@ struct AppConfigurationV2: Codable, Equatable {
         self.gameOverrides = gameOverrides
         self.lastConversionDate = lastConversionDate
         self.legacyCustomNames = legacyCustomNames
+        self.collapsedPlatforms = collapsedPlatforms
+    }
+
+    // Custom decoder so newly-added fields (`collapsedPlatforms`, and any future
+    // additions) don't break loading of an existing on-disk config that predates
+    // them — a missing key falls back to the default rather than throwing and
+    // wiping the user's whole configuration.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 2
+        sourceMode = try c.decodeIfPresent(String.self, forKey: .sourceMode) ?? "scan"
+        lastScanDirectory = try c.decodeIfPresent(String.self, forKey: .lastScanDirectory)
+        outputDirectory = try c.decodeIfPresent(String.self, forKey: .outputDirectory)
+        removeOrphanedBundles = try c.decodeIfPresent(Bool.self, forKey: .removeOrphanedBundles) ?? false
+        steamGridDBApiKey = try c.decodeIfPresent(String.self, forKey: .steamGridDBApiKey)
+        gameOverrides = try c.decodeIfPresent([String: GameOverride].self, forKey: .gameOverrides) ?? [:]
+        lastConversionDate = try c.decodeIfPresent(Date.self, forKey: .lastConversionDate)
+        legacyCustomNames = try c.decodeIfPresent([UInt32: String].self, forKey: .legacyCustomNames) ?? [:]
+        collapsedPlatforms = try c.decodeIfPresent(Set<String>.self, forKey: .collapsedPlatforms) ?? []
     }
 
     static var `default`: AppConfigurationV2 { AppConfigurationV2() }

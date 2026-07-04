@@ -353,6 +353,20 @@ enum EmulatorChoice: Equatable, Hashable {
         case .retroArchCore(let core): return "core:" + core
         }
     }
+
+    /// A cheap, value-typed display name for list rows — no database lookup.
+    /// The richer, curated names (e.g. "bsnes (RetroArch)") live in the
+    /// database and are used in the Game Properties window.
+    var shortDisplayName: String {
+        switch self {
+        case .standalone(let type):
+            return type.rawValue
+        case .retroArchCore(let core):
+            return core
+                .replacingOccurrences(of: "_libretro.dylib", with: "")
+                .replacingOccurrences(of: ".dylib", with: "")
+        }
+    }
 }
 
 extension EmulatorChoice: Codable {
@@ -469,6 +483,18 @@ enum GameSource: String, Codable {
     case steamVDF
 }
 
+// MARK: - ROM Pipeline: Game Status
+
+/// At-a-glance readiness of a game, surfaced in the main list. Only `.ready`
+/// games generate a bundle; the others are visibly flagged so a problem is
+/// noticeable without opening anything. Artwork-missing is deliberately NOT a
+/// status — the bundle falls back to a default icon, so it isn't "attention".
+enum GameStatus: Equatable {
+    case ready
+    case noEmulator
+    case unknownPlatform
+}
+
 // MARK: - ROM Pipeline: ROM Metadata
 
 /// Metadata parsed from a ROM filename by `ROMFilenameParser`.
@@ -533,6 +559,16 @@ struct GameEntry: Identifiable, Codable, Equatable {
 
     /// The path actually launched: the chosen image, else the primary rom path.
     var launchPath: URL { launchImage ?? romPath }
+
+    /// At-a-glance readiness, derived purely from the entry (no I/O, no database
+    /// lookup) so list rows can render it without observing the ViewModel. A
+    /// known platform with no assigned emulator means nothing installed can run
+    /// it; an "unknown" platform means the scan couldn't classify the ROM.
+    var status: GameStatus {
+        if platform.id == "unknown" { return .unknownPlatform }
+        if emulator == nil { return .noEmulator }
+        return .ready
+    }
 
     /// Stable identity for caching/overrides: derived from `romPath`, NOT the
     /// random UUID. Use this (not `id`) as the key for gameOverrides and the

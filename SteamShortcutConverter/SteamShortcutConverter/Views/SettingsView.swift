@@ -2,6 +2,9 @@
 //  SettingsView.swift
 //  SteamShortcutConverter
 //
+//  App-level configuration, presented as a standard macOS Settings window (⌘,)
+//  with three panes. Persistence happens on change — no Save button.
+//
 
 import SwiftUI
 
@@ -9,42 +12,81 @@ struct SettingsView: View {
     @ObservedObject var viewModel: MainViewModel
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text("Settings").font(.title2).fontWeight(.semibold)
+        TabView {
+            GeneralPane(viewModel: viewModel)
+                .tabItem { Label("General", systemImage: "gearshape") }
+            EmulatorsPane(viewModel: viewModel)
+                .tabItem { Label("Emulators", systemImage: "gamecontroller") }
+            ArtworkPane(viewModel: viewModel)
+                .tabItem { Label("Artwork", systemImage: "photo") }
+        }
+    }
+}
 
-                artworkSection
-                Divider()
-                defaultsSection
-                Divider()
-                cacheSection
+// MARK: - General
+
+private struct GeneralPane: View {
+    @ObservedObject var viewModel: MainViewModel
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Remove orphaned bundles", isOn: $viewModel.removeOrphanedBundles)
+                    .onChange(of: viewModel.removeOrphanedBundles) { _ in viewModel.saveSettings() }
+                Text("Delete generated app bundles for games no longer in your library.")
+                    .font(.caption).foregroundColor(.secondary)
             }
-            .padding()
+            Section("Locations") {
+                LabeledContent("Last ROM folder") {
+                    Text(viewModel.scanDirectory.isEmpty ? "—" : viewModel.scanDirectory)
+                        .foregroundColor(.secondary).lineLimit(1).truncationMode(.middle)
+                }
+                LabeledContent("Output folder") {
+                    Text(viewModel.outputDirectory.isEmpty ? "—" : viewModel.outputDirectory)
+                        .foregroundColor(.secondary).lineLimit(1).truncationMode(.middle)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+    }
+}
+
+// MARK: - Emulators
+
+private struct EmulatorsPane: View {
+    @ObservedObject var viewModel: MainViewModel
+
+    @State private var search: String = ""
+    @State private var showAll: Bool = false
+
+    private var platforms: [Platform] {
+        viewModel.allPlatforms.filter { platform in
+            let matchesSearch = search.isEmpty ||
+                platform.displayName.localizedCaseInsensitiveContains(search)
+            let hasOption = !viewModel.availableOptions(for: platform).isEmpty
+            return matchesSearch && (showAll || hasOption)
         }
     }
 
-    private var artworkSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("SteamGridDB").font(.headline)
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
-                SecureField("API Key", text: $viewModel.steamGridDBApiKey)
+                Image(systemName: "magnifyingglass").foregroundColor(.secondary)
+                TextField("Search platforms", text: $search)
                     .textFieldStyle(.roundedBorder)
-                    .onSubmit { viewModel.saveSettings() }
-                Button("Save") { viewModel.saveSettings() }
-                Link("Get API Key", destination: URL(string: "https://www.steamgriddb.com/profile/preferences/api")!)
+                Toggle("Show all", isOn: $showAll)
             }
-        }
-    }
+            Text("Default emulator per platform. Only installed platforms are shown unless \"Show all\" is on.")
+                .font(.caption).foregroundColor(.secondary)
 
-    private var defaultsSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Default Emulator per Platform").font(.headline)
-            ForEach(viewModel.allPlatforms) { platform in
+            List(platforms) { platform in
                 let options = viewModel.availableOptions(for: platform)
                 HStack {
-                    Text(platform.displayName).frame(width: 120, alignment: .leading)
+                    Text(platform.displayName)
+                    Spacer()
                     if options.isEmpty {
-                        Text("No emulator installed").foregroundColor(.secondary).font(.caption)
+                        Text("Not installed").foregroundColor(.secondary).font(.caption)
                     } else {
                         Picker("", selection: Binding(
                             get: { viewModel.defaultChoiceSetting(for: platform) ?? options.first?.choice },
@@ -57,24 +99,36 @@ struct SettingsView: View {
                         .labelsHidden()
                         .frame(width: 240)
                     }
-                    Spacer()
                 }
             }
         }
+        .padding()
     }
+}
 
-    private var cacheSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Artwork Cache").font(.headline)
-            HStack {
-                Text(byteString(viewModel.artworkCacheSize())).foregroundColor(.secondary)
-                Spacer()
+// MARK: - Artwork
+
+private struct ArtworkPane: View {
+    @ObservedObject var viewModel: MainViewModel
+
+    var body: some View {
+        Form {
+            Section("SteamGridDB") {
+                SecureField("API Key", text: $viewModel.steamGridDBApiKey)
+                    .onChange(of: viewModel.steamGridDBApiKey) { _ in viewModel.saveSettings() }
+                Link("Get API Key",
+                     destination: URL(string: "https://www.steamgriddb.com/profile/preferences/api")!)
+                    .font(.caption)
+            }
+            Section("Cache") {
+                LabeledContent("Size") {
+                    Text(ByteCountFormatter.string(fromByteCount: viewModel.artworkCacheSize(), countStyle: .file))
+                        .foregroundColor(.secondary)
+                }
                 Button("Clear Cache") { viewModel.clearArtworkCache() }
             }
         }
-    }
-
-    private func byteString(_ bytes: Int64) -> String {
-        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+        .formStyle(.grouped)
+        .padding()
     }
 }

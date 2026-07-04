@@ -9,9 +9,16 @@
 
 import Foundation
 import SwiftUI
+import AppKit
 
 @MainActor
 final class MainViewModel: ObservableObject {
+
+    /// A per-game field that can be individually overridden (and reset). Backs
+    /// the Properties window's override dots and per-field reset buttons.
+    enum OverrideField: CaseIterable {
+        case title, platform, emulator, args, launchImage
+    }
 
     enum SourceMode: String {
         case scan
@@ -34,6 +41,15 @@ final class MainViewModel: ObservableObject {
     @Published var lastConversionDate: Date?
     @Published var errorMessage: String?
 
+    /// Rows the user has selected in the list (drives context-menu / ⌘I / the
+    /// Properties window). Distinct from `GameEntry.isSelected`, which is the
+    /// generate-me checkbox.
+    @Published var selection: Set<GameEntry.ID> = []
+    /// The game whose Properties window is open (nil = closed). Reused window.
+    @Published var propertiesGameID: GameEntry.ID?
+    /// Platform ids whose list section is collapsed (persisted).
+    @Published var collapsedPlatforms: Set<String> = []
+
     // MARK: - Dependencies
 
     let database: SystemDatabase
@@ -50,6 +66,12 @@ final class MainViewModel: ObservableObject {
     private let shortcutFilter: ShortcutFilter = DefaultShortcutFilter()
 
     private var config = AppConfigurationV2.default
+
+    /// Pre-override snapshot of each entry, captured right after a scan/import
+    /// (default title, resolved platform, default emulator, default args). Used
+    /// to restore a field when the user resets its override — no persistence
+    /// change needed, and the original scanned platform isn't lost.
+    private var defaultEntries: [String: GameEntry] = [:]
 
     /// Read-only view of the current configuration (used by tests to assert
     /// override persistence without depending on async save timing).
@@ -119,6 +141,7 @@ final class MainViewModel: ObservableObject {
         steamGridDBApiKey = config.steamGridDBApiKey ?? ""
         sourceMode = SourceMode(rawValue: config.sourceMode) ?? .scan
         lastConversionDate = config.lastConversionDate
+        collapsedPlatforms = config.collapsedPlatforms
     }
 
     private func persist() {
@@ -128,6 +151,7 @@ final class MainViewModel: ObservableObject {
         config.steamGridDBApiKey = steamGridDBApiKey.isEmpty ? nil : steamGridDBApiKey
         config.sourceMode = sourceMode.rawValue
         config.lastConversionDate = lastConversionDate
+        config.collapsedPlatforms = collapsedPlatforms
         let snapshot = config
         Task { try? await configStore.save(snapshot) }
     }
@@ -142,13 +166,62 @@ final class MainViewModel: ObservableObject {
         Set(games.map { $0.platform.id }).count
     }
 
+    // MARK: - List grouping & status
+
+    /// Games grouped by platform for the collapsible list: platforms ordered
+    /// alphabetically by display name with the "unknown" bucket last; games
+    /// sorted by title (natural order) within each group.
+    var groupedGames: [(platform: Platform, games: [GameEntry])] {
+        Dictionary(grouping: games, by: { $0.platform })
+            .map { (platform: $0.key,
+                    games: $0.value.sorted {
+                        $0.title.localizedStandardCompare($1.title) == .orderedAscending
+                    }) }
+            .sorted { lhs, rhs in
+                if lhs.platform.id == "unknown" { return false }
+                if rhs.platform.id == "unknown" { return true }
+                return lhs.platform.displayName
+                    .localizedStandardCompare(rhs.platform.displayName) == .orderedAscending
+            }
+    }
+
+    /// How many games are not `.ready` (no emulator / unknown platform). Surfaced
+    /// in the status line so a problem is noticeable without opening anything.
+    var needsAttentionCount: Int {
+        games.filter { $0.status != .ready }.count
+    }
+
+    func isCollapsed(_ platformID: String) -> Bool {
+        collapsedPlatforms.contains(platformID)
+    }
+
+    func toggleCollapsed(_ platformID: String) {
+        if collapsedPlatforms.contains(platformID) {
+            collapsedPlatforms.remove(platformID)
+        } else {
+            collapsedPlatforms.insert(platformID)
+        }
+        persist()
+    }
+
     // MARK: - Scanning
+
+    /// Scan-on-choose: point at a directory and immediately scan it — there is no
+    /// separate "Scan" step in the redesigned UI.
+    func setScanDirectoryAndScan(_ url: URL) async {
+        scanDirectory = url.path
+        await scan()
+    }
 
     func scan() async {
         guard !scanDirectory.isEmpty else { return }
         isProcessing = true
         progressValue = 0
         progressMessage = "Scanning…"
+        // Drop any previous run's summary so the status line doesn't show stale
+        // "created N" counts for a different library.
+        conversionSummary = nil
+        showingSummary = false
         defer { isProcessing = false }
 
         do {
@@ -157,6 +230,7 @@ final class MainViewModel: ObservableObject {
             }
             emulatorConfig.refreshDetection()
             games = discovered.map { makeEntry(from: $0) }
+            captureDefaults()
             applyOverrides()
             applyCachedArtwork()
             sourceMode = .scan
@@ -234,12 +308,15 @@ final class MainViewModel: ObservableObject {
     // MARK: - VDF import
 
     func importFromVDF(url: URL) async {
+        conversionSummary = nil
+        showingSummary = false
         do {
             let data = try Data(contentsOf: url)
             let vdfData = try BinaryVDFReader(data: data).read()
             let shortcuts = try ShortcutParser().parseShortcuts(from: vdfData)
             let romShortcuts = shortcutFilter.filterROMShortcuts(from: shortcuts)
             games = vdfBridge.makeEntries(from: romShortcuts, legacyCustomNames: config.legacyCustomNames)
+            captureDefaults()
             applyOverrides()
             applyCachedArtwork()
             sourceMode = .vdf
@@ -362,6 +439,196 @@ final class MainViewModel: ObservableObject {
 
     func saveSettings() { persist() }
 
+    // MARK: - Per-game overrides & Properties
+
+    private func captureDefaults() {
+        defaultEntries = Dictionary(games.map { ($0.stableKey, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// The live entry for a given id (Properties window reads this).
+    func game(id: GameEntry.ID) -> GameEntry? {
+        games.first { $0.id == id }
+    }
+
+    /// Nicely formatted emulator name (curated DB display name when available).
+    func emulatorDisplayName(for game: GameEntry) -> String? {
+        guard let choice = game.emulator else { return nil }
+        if let option = availableOptions(for: game).first(where: { $0.choice == choice }) {
+            return option.displayName
+        }
+        return choice.shortDisplayName
+    }
+
+    /// Edit the launch argument template. Empty string clears the override and
+    /// restores the emulator's default template.
+    func setArgsTemplate(_ args: String, for game: GameEntry) {
+        let trimmed = args
+        if trimmed.isEmpty {
+            resetOverride(.args, for: game)
+            return
+        }
+        updateGame(game.id) { $0.argsTemplate = trimmed }
+        updateOverride(game.stableKey) { $0.args = trimmed }
+    }
+
+    // MARK: Custom artwork
+
+    /// Whether the game has cached artwork (fetched or user-supplied).
+    func hasArtwork(_ game: GameEntry) -> Bool {
+        if case .cached = game.artworkStatus { return true }
+        return artworkCache.hasOriginal(for: game.stableKey)
+    }
+
+    /// Use a user-chosen image file as the game's artwork. Re-encodes to PNG so
+    /// the cache's `original.png` is always a real PNG regardless of the source
+    /// format the bundle generator can convert.
+    func setCustomArtwork(url: URL, for game: GameEntry) {
+        do {
+            guard let png = Self.pngData(from: url) else {
+                errorMessage = "Couldn't read that image."
+                return
+            }
+            let metadata = ArtworkMetadata(
+                sgdbGameId: nil, sgdbImageId: nil, downloadedAt: Date(), sourceType: "custom")
+            let stored = try artworkCache.store(originalPNG: png, metadata: metadata, for: game.stableKey)
+            updateGame(game.id) { $0.artworkStatus = .cached(stored) }
+        } catch {
+            errorMessage = "Couldn't set artwork: \(error.localizedDescription)"
+        }
+    }
+
+    func removeArtwork(for game: GameEntry) {
+        try? artworkCache.remove(for: game.stableKey)
+        updateGame(game.id) { $0.artworkStatus = .none }
+    }
+
+    private static func pngData(from url: URL) -> Data? {
+        guard let image = NSImage(contentsOf: url),
+              let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff) else { return nil }
+        return rep.representation(using: .png, properties: [:])
+    }
+
+    // MARK: Override introspection & reset
+
+    func hasOverride(_ field: OverrideField, for game: GameEntry) -> Bool {
+        guard let override = config.gameOverrides[game.stableKey] else { return false }
+        switch field {
+        case .title:       return override.customTitle != nil
+        case .platform:    return override.platform != nil
+        case .emulator:    return override.emulator != nil
+        case .args:        return override.args != nil
+        case .launchImage: return override.imagePath != nil
+        }
+    }
+
+    var anyOverrides: (GameEntry) -> Bool {
+        { game in self.config.gameOverrides[game.stableKey] != nil }
+    }
+
+    /// Restore a single field to its post-scan default and drop that part of the
+    /// override.
+    func resetOverride(_ field: OverrideField, for game: GameEntry) {
+        let base = defaultEntries[game.stableKey]
+        updateGame(game.id) { entry in
+            switch field {
+            case .title:
+                entry.title = base?.title ?? entry.romMetadata.title
+            case .platform:
+                if let base { entry.platform = base.platform }
+                // Re-resolve the default emulator for the restored platform.
+                if let choice = self.emulatorConfig.defaultChoice(for: entry.platform) {
+                    self.assignEmulator(&entry, choice: choice)
+                }
+            case .emulator:
+                if let base {
+                    entry.emulator = base.emulator
+                    entry.emulatorPath = base.emulatorPath
+                    entry.argsTemplate = base.argsTemplate
+                }
+            case .args:
+                entry.argsTemplate = base?.argsTemplate ?? entry.argsTemplate
+            case .launchImage:
+                entry.launchImage = base?.launchImage
+            }
+        }
+        updateOverride(game.stableKey) { override in
+            switch field {
+            case .title:       override.customTitle = nil
+            case .platform:    override.platform = nil
+            case .emulator:    override.emulator = nil
+            case .args:        override.args = nil
+            case .launchImage: override.imagePath = nil
+            }
+        }
+    }
+
+    /// Restore every overridden field to its post-scan default and clear the
+    /// whole override. Artwork (cache-backed, not a GameOverride) is untouched.
+    func resetOverrides(for game: GameEntry) {
+        if let base = defaultEntries[game.stableKey] {
+            updateGame(game.id) { entry in
+                entry.title = base.title
+                entry.platform = base.platform
+                entry.emulator = base.emulator
+                entry.emulatorPath = base.emulatorPath
+                entry.argsTemplate = base.argsTemplate
+                entry.launchImage = base.launchImage
+            }
+        }
+        config.gameOverrides.removeValue(forKey: game.stableKey)
+        persist()
+    }
+
+    // MARK: - Generation preview
+
+    /// Counts of what a generate run would do, for the live trust-signal label.
+    struct GenerationPreview: Equatable {
+        var created = 0
+        var updated = 0
+        var unchanged = 0
+        var removed = 0
+
+        var isEmpty: Bool { created == 0 && updated == 0 && removed == 0 }
+    }
+
+    /// A cheap signature of the inputs that affect the preview, so the UI can
+    /// recompute only when the selection or last-generation timestamp changes.
+    var generationSignature: Int {
+        var hasher = Hasher()
+        for game in games where game.isSelected { hasher.combine(game.stableKey) }
+        hasher.combine(lastConversionDate)
+        hasher.combine(removeOrphanedBundles)
+        return hasher.finalize()
+    }
+
+    /// Non-mutating dry run: mirrors `generate()`'s change classification so the
+    /// label matches what generate then does. A new/modified game with no
+    /// emulator is NOT counted (generate skips it with a warning).
+    func previewChanges() async -> GenerationPreview {
+        let selected = games.filter { $0.isSelected }
+        let previousState = try? await configStore.loadGameState()
+        let changes = incrementalManager.detectChanges(currentGames: selected, previousState: previousState)
+        var preview = GenerationPreview()
+        for game in selected {
+            guard let change = changes[game.stableKey] else { continue }
+            switch change.changeType {
+            case .unchanged:
+                preview.unchanged += 1
+            case .new:
+                if game.emulator != nil { preview.created += 1 }
+            case .modified:
+                if game.emulator != nil { preview.updated += 1 }
+            case .removed:
+                break
+            }
+        }
+        if removeOrphanedBundles {
+            preview.removed = changes.values.filter { $0.changeType == .removed }.count
+        }
+        return preview
+    }
+
     // MARK: - Generation
 
     func generate() async {
@@ -427,7 +694,10 @@ final class MainViewModel: ObservableObject {
                 bundleIdentifier: idByKey[game.stableKey] ?? "com.romshortcutmaker.game",
                 displayName: game.title,
                 executablePath: resolved.emulatorPath,
-                argsTemplate: resolved.argsTemplate,
+                // Prefer the entry's template so a per-game args override (edited
+                // in Properties) is honored; it equals the emulator default when
+                // not overridden.
+                argsTemplate: game.argsTemplate.isEmpty ? resolved.argsTemplate : game.argsTemplate,
                 romPath: game.launchPath,
                 corePath: resolved.corePath,
                 iconICNS: artworkCache.hasICNS(for: game.stableKey) ? artworkCache.icnsURL(for: game.stableKey) : nil,

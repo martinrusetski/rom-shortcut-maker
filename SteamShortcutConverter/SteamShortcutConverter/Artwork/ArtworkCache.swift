@@ -113,6 +113,14 @@ final class ArtworkCache {
         }
     }
 
+    /// Remove the cached artwork for a single key (user "Remove" action).
+    func remove(for stableKey: String) throws {
+        let dir = directory(for: stableKey)
+        if fileManager.fileExists(atPath: dir.path) {
+            try fileManager.removeItem(at: dir)
+        }
+    }
+
     /// Whether the cached artwork for an entry is older than `olderThanDays`, or
     /// missing entirely (which also counts as stale).
     func isStale(entry: GameEntry, olderThanDays days: Int) -> Bool {
