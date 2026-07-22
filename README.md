@@ -4,6 +4,25 @@ A native macOS application that scans your ROM directories, identifies each game
 
 Importing an existing Steam ROM Manager `shortcuts.vdf` is still supported as a secondary input path.
 
+## Installation
+
+**Homebrew (recommended):**
+
+```sh
+brew tap martinrusetski/rom-shortcut-maker https://github.com/martinrusetski/rom-shortcut-maker
+brew install --cask rom-shortcut-maker
+```
+
+The cask clears the quarantine attribute automatically, so the app launches without a Gatekeeper prompt, and updates install in place with `brew upgrade`.
+
+**Direct download:** Grab the latest `RomShortcutMaker-vX.Y.Z.dmg` from [Releases](https://github.com/martinrusetski/rom-shortcut-maker/releases), drag the app to Applications, then — because the app is ad-hoc signed rather than notarized — run once:
+
+```sh
+xattr -cr "/Applications/Rom Shortcut Maker.app"
+```
+
+Either way, once installed the app updates itself in the background (via Sparkle) — you won't need to repeat these steps for future versions.
+
 ## Key Features
 
 - **Direct ROM scanning**: Point it at a ROM directory and it walks the tree, identifying games and platforms. Platform is inferred folder-first (e.g. `/ROMs/SNES/…`), falling back to file extension.
@@ -16,9 +35,9 @@ Importing an existing Steam ROM Manager `shortcuts.vdf` is still supported as a 
 
 ## Building & Testing
 
-- **Headless tests (canonical):** `cd SteamShortcutConverter && swift test`. Builds the logic into a library and runs the suite without launching the GUI.
-- **App build:** `xcodebuild -project SteamShortcutConverter.xcodeproj -scheme SteamShortcutConverter -configuration Debug build`, or open the project in Xcode and press ⌘R.
-- **Do not** run `xcodebuild test` / ⌘U — the Xcode test target is hosted in the app target and traps on launch under the test runner. Use `swift test`.
+- **Build system:** SwiftPM is canonical. `Package.swift` builds the whole app (`@main` included) and links Sparkle. For a GUI dev loop, open `SteamShortcutConverter/Package.swift` directly in Xcode and press ⌘R — no `.xcodeproj` needed. (The legacy `SteamShortcutConverter.xcodeproj` is untracked and no longer required.)
+- **Headless tests (canonical):** `cd SteamShortcutConverter && swift test`. Runs the logic suite without launching the GUI.
+- **Release build:** `./make-dmg.sh v0.1.0` assembles `Rom Shortcut Maker.app` and a DMG locally — the same steps CI runs on a tag push.
 - **Minimum OS:** macOS 13.
 
 ## Quick Start
@@ -47,3 +66,14 @@ Design and phased implementation plan: `DESIGN_PLAN.md`. Specs: `docs/specs/rom-
 - **Language**: Swift / SwiftUI
 - **Minimum OS**: macOS 13
 - **License**: TBD
+
+### Releasing
+
+Pushing a `vX.Y.Z` tag triggers `.github/workflows/release.yml`, which runs the tests, builds and ad-hoc-signs `Rom Shortcut Maker.app`, embeds Sparkle, produces a DMG, signs it with the Sparkle EdDSA key (`SPARKLE_PRIVATE_KEY` secret), prepends an entry to `appcast.xml`, updates `Casks/rom-shortcut-maker.rb`, commits both back to `main`, and creates the GitHub Release with the DMG attached.
+
+```sh
+git tag -a v0.1.0 -m "Release notes go in the tag body (they become the release notes)"
+git push origin v0.1.0
+```
+
+Sparkle auto-updates and the Homebrew cask both read from the committed `appcast.xml` / cask, so a single tag push updates every distribution channel.

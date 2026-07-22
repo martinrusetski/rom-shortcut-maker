@@ -3,35 +3,52 @@
 
 import PackageDescription
 
-// This package exists for HEADLESS testing of the app's logic (`swift test`).
-// The shippable macOS app is built from SteamShortcutConverter.xcodeproj.
+// SwiftPM is the single build system for this app: `swift test` runs the
+// headless logic suite, `swift build -c release` produces the shippable binary,
+// and CI hand-assembles that binary into "Rom Shortcut Maker.app" (see the
+// release workflow and make-dmg.sh). For a GUI dev loop, open this Package.swift
+// directly in Xcode — no .xcodeproj required.
 //
-// The library target compiles the same source files as the app target, EXCEPT
-// `SteamShortcutConverterApp.swift` (the `@main` entry point), which can only be
-// compiled in an executable context. Everything the tests touch — parsers,
-// filters, generators, managers, view models — lives in this library, so the
-// suite runs without launching the GUI.
+// The one target holds every source file, `@main` included, so the test target
+// can `@testable import SteamShortcutConverter` and reach the whole codebase.
 let package = Package(
     name: "SteamShortcutConverter",
     platforms: [
         .macOS(.v13)
     ],
     products: [
-        .library(
-            name: "SteamShortcutConverter",
+        .executable(
+            name: "RomShortcutMaker",
             targets: ["SteamShortcutConverter"])
     ],
+    dependencies: [
+        // Sparkle powers in-app auto-updates. The framework is embedded into the
+        // .app by hand (embed-sparkle.sh) using an @executable_path/../Frameworks
+        // rpath, mirroring the layout Xcode would produce.
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
+    ],
     targets: [
-        .target(
+        .executableTarget(
             name: "SteamShortcutConverter",
+            dependencies: [
+                .product(name: "Sparkle", package: "Sparkle"),
+            ],
             path: "SteamShortcutConverter",
             exclude: [
-                "SteamShortcutConverterApp.swift",
+                // Xcode-only build inputs; the release build generates its own
+                // Info.plist and compiles Assets.xcassets with actool in CI.
                 "Info.plist",
                 "Assets.xcassets"
             ],
             resources: [
                 .process("Resources")
+            ],
+            linkerSettings: [
+                .unsafeFlags([
+                    // Locate the embedded Sparkle.framework at runtime once the
+                    // executable lives inside the .app bundle we assemble by hand.
+                    "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"
+                ])
             ]),
         .testTarget(
             name: "SteamShortcutConverterTests",

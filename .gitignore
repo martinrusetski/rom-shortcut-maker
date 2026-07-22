@@ -19,7 +19,7 @@ DerivedData/
 .build/
 Packages/
 Package.pins
-Package.resolved
+# Package.resolved is committed to pin Sparkle for reproducible release builds.
 
 # CocoaPods
 Pods/
@@ -30,6 +30,8 @@ Carthage/Build/
 # Build artifacts
 build/
 *.app
+*.dmg
+dmg_staging/
 
 # IDE
 .vscode/

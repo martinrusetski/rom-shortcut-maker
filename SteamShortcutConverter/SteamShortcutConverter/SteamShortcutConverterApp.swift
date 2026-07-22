@@ -15,12 +15,20 @@ struct SteamShortcutConverterApp: App {
     // the Game Properties window all share one instance.
     @StateObject private var viewModel = MainViewModel()
 
+    // Sparkle auto-updater, owned for the app's lifetime.
+    @StateObject private var updaterViewModel = UpdaterViewModel()
+
     var body: some Scene {
         WindowGroup {
             ContentView(viewModel: viewModel)
         }
         .windowResizability(.contentSize)
-        .commands { AppCommands(viewModel: viewModel) }
+        .commands {
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesView(updater: updaterViewModel.updater)
+            }
+            AppCommands(viewModel: viewModel)
+        }
 
         Settings {
             SettingsView(viewModel: viewModel)
