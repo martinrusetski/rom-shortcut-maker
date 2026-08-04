@@ -114,6 +114,7 @@
       "libretroSystems": ["playstation2"],
       "emulatorOptions": [
         { "type": "standalone", "emulator": "PCSX2" },
+        { "type": "standalone", "emulator": "ARMSX2" },
         { "type": "standalone", "emulator": "Play!" }
       ]
     },
@@ -413,6 +414,7 @@
     { "id": "Lime3DS",        "argsTemplate": "\"{emulator}\" \"{rom}\"" },
     { "id": "Dolphin",        "argsTemplate": "\"{emulator}\" \"{rom}\"" },
     { "id": "DuckStation",    "argsTemplate": "\"{emulator}\" \"{rom}\"" },
+    { "id": "ARMSX2",         "argsTemplate": "\"{emulator}\" \"{rom}\"" },
     { "id": "PCSX2",          "argsTemplate": "\"{emulator}\" \"{rom}\"" },
     { "id": "Play!",          "argsTemplate": "\"{emulator}\" \"{rom}\"" },
     { "id": "PPSSPP",         "argsTemplate": "\"{emulator}\" \"{rom}\"" },

@@ -15,6 +15,7 @@ final class EmulatorConfigManagerTests: XCTestCase {
     let binDir = URL(fileURLWithPath: "/FakeBin")
 
     let snes = Platform(id: "snes", displayName: "SNES")
+    let ps2 = Platform(id: "ps2", displayName: "PS2")
     let wiiu = Platform(id: "wiiu", displayName: "Wii U")
 
     override func setUpWithError() throws {
@@ -90,6 +91,30 @@ final class EmulatorConfigManagerTests: XCTestCase {
         // bsnes isn't detected, but the user configured a path.
         manager.setPath("/Applications/bsnes.app", for: .bsnes)
         XCTAssertTrue(manager.availableOptions(for: snes).contains { $0.choice == .standalone(.bsnes) })
+    }
+
+    func testPCSX2AndARMSX2CanBeSelectedIndependently() {
+        let fs = FakeAppDiscovering()
+        let pcsx2 = appsDir.appendingPathComponent("PCSX2.app")
+        let armsx2 = appsDir.appendingPathComponent("ARMSX2.app")
+        fs.appsByDir[appsDir.path] = [pcsx2, armsx2]
+        fs.bundleExecutables[pcsx2.path] = "pcsx2-qt"
+        fs.bundleExecutables[armsx2.path] = "pcsx2-qt"
+        let detector = EmulatorDetector(
+            database: database, fs: fs,
+            appSearchDirectories: [appsDir], binSearchDirectories: [binDir],
+            extraCoreDirectories: [], extraInfoDirectories: []
+        )
+        let manager = EmulatorConfigManager(
+            database: database, detector: detector,
+            store: InMemoryEmulatorConfigStore()
+        )
+
+        let choices = manager.availableOptions(for: ps2).map { $0.choice }
+        XCTAssertTrue(choices.contains(.standalone(.pcsx2)))
+        XCTAssertTrue(choices.contains(.standalone(.armsx2)))
+        XCTAssertEqual(manager.resolve(.standalone(.pcsx2))?.emulatorPath, pcsx2)
+        XCTAssertEqual(manager.resolve(.standalone(.armsx2))?.emulatorPath, armsx2)
     }
 
     // MARK: - Default choice

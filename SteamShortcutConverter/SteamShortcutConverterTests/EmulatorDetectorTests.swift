@@ -80,6 +80,19 @@ final class EmulatorDetectorTests: XCTestCase {
         XCTAssertEqual(detector.detectAll()[.retroArch], [app])
     }
 
+    func testDetectARMSX2BeforePCSX2InnerExecutable() {
+        let fs = FakeAppDiscovering()
+        let app = appsDir.appendingPathComponent("ARMSX2.app")
+        fs.appsByDir[appsDir.path] = [app]
+        // ARMSX2 keeps the PCSX2 Qt executable name inside its macOS bundle.
+        fs.bundleExecutables[app.path] = "pcsx2-qt"
+        let detector = makeDetector(fs: fs)
+
+        let detected = detector.detectAll()
+        XCTAssertEqual(detected[.armsx2], [app])
+        XCTAssertNil(detected[.pcsx2])
+    }
+
     func testAmbiguousAppNameDoesNotFalseMatch() {
         let fs = FakeAppDiscovering()
         let app = appsDir.appendingPathComponent("Software Updater.app")

@@ -49,6 +49,9 @@ enum EmulatorType: String, CaseIterable {
     
     // PlayStation
     case duckstation = "DuckStation"
+    // ARMSX2's macOS bundle contains a pcsx2-qt executable, so this case
+    // must remain before PCSX2 for EmulatorMatcher's ordered matching.
+    case armsx2 = "ARMSX2"
     case pcsx2 = "PCSX2"
     case ppsspp = "PPSSPP"
     case rpcs3 = "RPCS3"
@@ -165,6 +168,8 @@ enum EmulatorType: String, CaseIterable {
         // PlayStation
         case .duckstation:
             return ["duckstation"]
+        case .armsx2:
+            return ["armsx2", "armsx2-qt"]
         case .pcsx2:
             return ["pcsx2"]
         case .ppsspp:

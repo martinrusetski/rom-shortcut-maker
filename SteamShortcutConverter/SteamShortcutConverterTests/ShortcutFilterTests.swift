@@ -105,6 +105,17 @@ final class ShortcutFilterTests: XCTestCase {
         XCTAssertEqual(detected, .pcsx2, "Should detect PCSX2 from direct executable path")
     }
     
+    func testDetectARMSX2AppBundle() {
+        let shortcut = SteamShortcut(
+            appID: 21,
+            appName: "Test Game",
+            exe: "/Applications/ARMSX2.app"
+        )
+
+        let detected = filter.detectEmulator(for: shortcut)
+        XCTAssertEqual(detected, .armsx2, "Should detect ARMSX2 from .app bundle path")
+    }
+
     // MARK: - PPSSPP Detection Tests
     
     func testDetectPPSSPPAppBundle() {
