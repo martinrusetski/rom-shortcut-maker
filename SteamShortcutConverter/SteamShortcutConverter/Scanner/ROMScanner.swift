@@ -327,9 +327,22 @@ final class ROMScanner: ROMScanning {
         )
     }
 
+    private struct PlaylistPlatformProbe {
+        let candidates: [Platform]
+        let evidence: [String]
+    }
+
     private func resolvePlatform(
         for url: URL,
         root: URL
+    ) -> (platform: Platform?, ambiguous: Bool, detection: PlatformDetectionInfo) {
+        resolvePlatform(for: url, root: root, playlistDepth: 0)
+    }
+
+    private func resolvePlatform(
+        for url: URL,
+        root: URL,
+        playlistDepth: Int
     ) -> (platform: Platform?, ambiguous: Bool, detection: PlatformDetectionInfo) {
         let extensionName = normalizedExtension(of: url)
         let byExtension = database.platforms(forExtension: extensionName)
@@ -359,6 +372,23 @@ final class ROMScanner: ROMScanning {
                 candidates: byExtension,
                 resolvedBy: "unique extension \(extensionLabel)"
             ))
+        }
+
+        if extensionName == ".m3u", playlistDepth < 4,
+           let playlistProbe = inspectPlaylistPlatform(
+               at: url,
+               root: root,
+               allowedPlatforms: byExtension,
+               playlistDepth: playlistDepth
+           ) {
+            evidence.append(contentsOf: playlistProbe.evidence)
+            if playlistProbe.candidates.count == 1 {
+                return (playlistProbe.candidates[0], false, info(
+                    candidates: playlistProbe.candidates,
+                    resolvedBy: "playlist member detection"
+                ))
+            }
+            candidates = playlistProbe.candidates
         }
 
         if extensionName == ".chd", byExtension.count > 1,
@@ -397,6 +427,56 @@ final class ROMScanner: ROMScanning {
             ))
         }
         return (nil, candidates.count > 1, info(candidates: candidates, resolvedBy: nil))
+    }
+
+    /// A playlist has no useful payload of its own. Resolve the listed disc
+    /// entry points with the normal detector, then retain only platforms that
+    /// remain possible for every member that produced a signal. This lets a
+    /// playlist inherit extension, CHD metadata, content, or folder evidence
+    /// from its discs without using their filenames as a platform heuristic.
+    private func inspectPlaylistPlatform(
+        at url: URL,
+        root: URL,
+        allowedPlatforms: [Platform],
+        playlistDepth: Int
+    ) -> PlaylistPlatformProbe? {
+        let entries = DiscImage.entries(ofPlaylist: url)
+        guard !entries.isEmpty else { return nil }
+
+        var possibleIDs: Set<String>?
+        var evidence: [String] = []
+        for entry in entries.prefix(4) {
+            let member = resolvePlatform(
+                for: entry,
+                root: root,
+                playlistDepth: playlistDepth + 1
+            )
+            evidence.append(contentsOf: member.detection.evidence.map {
+                "Playlist member \(entry.lastPathComponent): \($0)"
+            })
+
+            let memberIDs: Set<String>
+            if let platform = member.platform {
+                memberIDs = [platform.id]
+            } else {
+                memberIDs = Set(member.detection.candidates.map(\.id))
+            }
+            guard !memberIDs.isEmpty else { continue }
+            possibleIDs = possibleIDs.map { $0.intersection(memberIDs) } ?? memberIDs
+            if possibleIDs?.isEmpty == true { break }
+        }
+
+        guard let possibleIDs, !possibleIDs.isEmpty else { return nil }
+        let allowedIDs = Set(allowedPlatforms.map(\.id))
+        let filteredIDs = allowedIDs.isEmpty
+            ? possibleIDs
+            : possibleIDs.intersection(allowedIDs)
+        guard !filteredIDs.isEmpty else { return nil }
+
+        return PlaylistPlatformProbe(
+            candidates: database.allPlatforms.filter { filteredIDs.contains($0.id) },
+            evidence: evidence
+        )
     }
 
     private func dedupe(_ urls: [URL]) -> [URL] {

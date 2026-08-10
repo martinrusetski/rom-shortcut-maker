@@ -366,6 +366,40 @@ final class ROMScannerTests: XCTestCase {
         XCTAssertFalse(game?.platformAmbiguous ?? true)
     }
 
+    func testM3UInheritsUniqueMemberExtension() async throws {
+        try makeFile("Loose/Disc 1.gdi", contents: "1\n0 0 4 2352 \"track.bin\" 0\n")
+        try makeFile("Loose/Panzer Dragoon.m3u", contents: "Disc 1.gdi\n")
+
+        let roms = try await scan()
+        let game = rom(roms, named: "Panzer Dragoon.m3u")
+        XCTAssertEqual(game?.platform?.id, "dreamcast")
+        XCTAssertEqual(game?.detection?.resolvedBy, "playlist member detection")
+    }
+
+    func testM3UInheritsCHDMetadataFromDiscMembers() async throws {
+        try makeCHD(
+            "Loose/Game (Disc 1).chd",
+            metadataTag: "DVD ",
+            logicalBytes: 4_617_273_344
+        )
+        try makeCHD(
+            "Loose/Game (Disc 2).chd",
+            metadataTag: "DVD ",
+            logicalBytes: 4_617_273_344
+        )
+        try makeFile(
+            "Loose/Game.m3u",
+            contents: "Game (Disc 1).chd\nGame (Disc 2).chd\n"
+        )
+
+        let roms = try await scan()
+        let game = rom(roms, named: "Game.m3u")
+        XCTAssertEqual(game?.platform?.id, "ps2")
+        XCTAssertTrue(game?.detection?.evidence.contains {
+            $0.contains("CHD metadata")
+        } ?? false)
+    }
+
     func testMultiDiscWithoutM3UIsGrouped() async throws {
         // No playlist; two discs distinguished by (Disc N) markers.
         try makeFile("PSX/FF7/Final Fantasy VII (Disc 1).chd")
