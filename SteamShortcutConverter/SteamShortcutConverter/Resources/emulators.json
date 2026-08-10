@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "genericRomExtensions": [".mds"],
   "platforms": [
     {
       "id": "nes",
@@ -101,6 +102,7 @@
       "displayName": "PS1",
       "folderAliases": ["ps1", "psx", "playstation", "playstation 1", "psone", "sony playstation"],
       "romExtensions": [".cue", ".chd", ".bin", ".m3u", ".pbp", ".ecm", ".ccd"],
+      "chdMediaTypes": ["cd"],
       "libretroSystems": ["playstation"],
       "emulatorOptions": [
         { "type": "standalone", "emulator": "DuckStation" }
@@ -111,6 +113,7 @@
       "displayName": "PS2",
       "folderAliases": ["ps2", "playstation 2", "sony playstation 2"],
       "romExtensions": [".iso", ".chd", ".cso", ".bin", ".m3u"],
+      "chdMediaTypes": ["cd", "dvd"],
       "libretroSystems": ["playstation2"],
       "emulatorOptions": [
         { "type": "standalone", "emulator": "PCSX2" },
@@ -123,6 +126,8 @@
       "displayName": "PSP",
       "folderAliases": ["psp", "playstation portable"],
       "romExtensions": [".iso", ".cso", ".chd", ".pbp", ".m3u"],
+      "chdMediaTypes": ["dvd"],
+      "chdMaxLogicalBytes": 2000000000,
       "libretroSystems": ["playstation_portable"],
       "emulatorOptions": [
         { "type": "standalone", "emulator": "PPSSPP" }
@@ -152,7 +157,8 @@
       "id": "saturn",
       "displayName": "Saturn",
       "folderAliases": ["saturn", "sega saturn"],
-      "romExtensions": [".cue", ".chd", ".m3u", ".ccd", ".mds"],
+      "romExtensions": [".cue", ".chd", ".m3u", ".ccd"],
+      "chdMediaTypes": ["cd"],
       "libretroSystems": ["sega_saturn"],
       "emulatorOptions": [
         { "type": "standalone", "emulator": "Mednafen" }
@@ -163,6 +169,7 @@
       "displayName": "Dreamcast",
       "folderAliases": ["dreamcast", "dc", "sega dreamcast"],
       "romExtensions": [".cdi", ".chd", ".gdi", ".cue", ".m3u", ".ccd"],
+      "chdMediaTypes": ["gdrom"],
       "libretroSystems": ["dreamcast"],
       "emulatorOptions": [
         { "type": "standalone", "emulator": "Flycast" },
@@ -174,6 +181,7 @@
       "displayName": "Arcade",
       "folderAliases": ["arcade", "mame", "fbneo", "fba", "neogeo", "neo geo"],
       "romExtensions": [".zip", ".chd"],
+      "chdMediaTypes": ["hardDisk"],
       "libretroSystems": ["arcade", "mame", "fb_alpha", "neogeo", "hbmame"],
       "emulatorOptions": [
         { "type": "standalone", "emulator": "MAME" }
@@ -395,6 +403,7 @@
       "displayName": "3DO",
       "folderAliases": ["3do", "panasonic 3do", "real3do"],
       "romExtensions": [".cue", ".chd", ".iso"],
+      "chdMediaTypes": ["cd"],
       "libretroSystems": ["3do"],
       "emulatorOptions": []
     }

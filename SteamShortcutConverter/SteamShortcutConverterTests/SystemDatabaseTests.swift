@@ -109,6 +109,11 @@ final class SystemDatabaseTests: XCTestCase {
         XCTAssertEqual(withoutDot, ["snes"])
     }
 
+    func testMDSIsScanSupportedButPlatformNeutral() {
+        XCTAssertTrue(database.allRomExtensions.contains(".mds"))
+        XCTAssertTrue(database.platforms(forExtension: ".mds").isEmpty)
+    }
+
     // MARK: - Emulator options
 
     func testSnesStandaloneOptions() {

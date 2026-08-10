@@ -65,6 +65,7 @@ final class SystemDatabase {
     private struct Root: Decodable {
         let version: Int
         let platforms: [PlatformRecord]
+        let genericRomExtensions: [String]?
         let emulators: [EmulatorRecord]
     }
 
@@ -73,6 +74,8 @@ final class SystemDatabase {
         let displayName: String
         let folderAliases: [String]
         let romExtensions: [String]
+        let chdMediaTypes: [String]?
+        let chdMaxLogicalBytes: UInt64?
         let emulatorOptions: [OptionRecord]
         let libretroSystems: [String]?
     }
@@ -92,6 +95,7 @@ final class SystemDatabase {
     // MARK: Stored state
 
     private let platformRecords: [PlatformRecord]
+    private let genericRomExtensions: [String]
     private let emulatorTemplates: [String: String]   // emulator id -> args template
 
     /// Every emulator identifier referenced by the `emulators[]` block (exposed
@@ -148,6 +152,7 @@ final class SystemDatabase {
         }
 
         self.platformRecords = root.platforms
+        self.genericRomExtensions = root.genericRomExtensions ?? []
         var templates: [String: String] = [:]
         for record in root.emulators {
             templates[record.id] = record.argsTemplate
@@ -174,8 +179,8 @@ final class SystemDatabase {
         return result
     }
 
-    /// PRIMARY platform signal: match a (case-insensitive) directory name
-    /// against platform folder aliases.
+    /// Folder fallback signal: match a (case-insensitive) directory name against
+    /// platform folder aliases.
     func platform(forFolderName name: String) -> Platform? {
         let key = name.lowercased()
         for record in platformRecords {
@@ -186,8 +191,8 @@ final class SystemDatabase {
         return nil
     }
 
-    /// SECONDARY platform signal: all platforms whose ROM extensions include
-    /// `ext` (surfaces collisions instead of hiding them).
+    /// Platform candidates whose ROM extensions include `ext` (surfaces
+    /// collisions instead of hiding them).
     func platforms(forExtension ext: String) -> [Platform] {
         let normalized = normalizeExtension(ext)
         var result: [Platform] = []
@@ -197,6 +202,19 @@ final class SystemDatabase {
             }
         }
         return result
+    }
+
+    /// Platforms whose CHD media profile matches the image's internal metadata.
+    /// A maximum logical size is used for formats that share a media type: PSP
+    /// UMD images are DVDs, but cannot be larger than the UMD capacity.
+    func platforms(forCHDMediaType mediaType: String, logicalBytes: UInt64) -> [Platform] {
+        platformRecords.compactMap { record in
+            guard record.chdMediaTypes?.contains(mediaType) == true,
+                  record.chdMaxLogicalBytes.map({ logicalBytes <= $0 }) ?? true else {
+                return nil
+            }
+            return Platform(id: record.id, displayName: record.displayName)
+        }
     }
 
     /// Ordered list of all known ways to run a platform (before checking what's
@@ -251,6 +269,9 @@ final class SystemDatabase {
             for ext in record.romExtensions {
                 set.insert(normalizeExtension(ext))
             }
+        }
+        for ext in genericRomExtensions {
+            set.insert(normalizeExtension(ext))
         }
         return set
     }

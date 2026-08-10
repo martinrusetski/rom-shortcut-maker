@@ -3,7 +3,7 @@
 //  SteamShortcutConverter
 //
 //  Walks a directory tree, identifies ROM files, and assigns each a platform
-//  using folder-first inference (the key design decision here).
+//  using extension/content inference with folder names as a final fallback.
 //
 
 import Foundation
@@ -94,6 +94,7 @@ final class ROMScanner: ROMScanning {
 
     private let database: SystemDatabase
     private let filenameParser: ROMFilenameParser
+    private let chdInspector = CHDImageInspector()
 
     init(database: SystemDatabase) {
         self.database = database
@@ -321,11 +322,23 @@ final class ROMScanner: ROMScanning {
     }
 
     private func resolvePlatform(for url: URL, root: URL) -> (platform: Platform?, ambiguous: Bool) {
+        let extensionName = normalizedExtension(of: url)
+        let byExtension = database.platforms(forExtension: extensionName)
+        if byExtension.count == 1 { return (byExtension[0], false) }
+        if extensionName == ".chd", byExtension.count > 1,
+           let imageInfo = chdInspector.inspect(url: url) {
+            let mediaPlatformIDs = Set(database.platforms(
+                forCHDMediaType: imageInfo.mediaType.rawValue,
+                logicalBytes: imageInfo.logicalBytes
+            ).map(\.id))
+            let byMedia = byExtension.filter { mediaPlatformIDs.contains($0.id) }
+            if byMedia.count == 1 { return (byMedia[0], false) }
+        }
+        // Folder names are deliberately last: they are useful organization
+        // hints, but must not override a stronger extension or image signal.
         if let folderPlatform = inferPlatform(for: url, root: root) {
             return (folderPlatform, false)
         }
-        let byExtension = database.platforms(forExtension: normalizedExtension(of: url))
-        if byExtension.count == 1 { return (byExtension[0], false) }
         if byExtension.count > 1 { return (nil, true) }
         return (nil, false)
     }
@@ -341,9 +354,9 @@ final class ROMScanner: ROMScanning {
 
     // MARK: - Inference
 
-    /// Folder-first platform inference: walk up from the ROM file toward the scan
-    /// root (inclusive), returning the first ancestor directory name that matches
-    /// a platform alias.
+    /// Fallback platform inference: walk up from the ROM file toward the scan root
+    /// (inclusive), returning the first ancestor directory name that matches a
+    /// platform alias.
     private func inferPlatform(for fileURL: URL, root: URL) -> Platform? {
         let rootPath = root.standardizedFileURL.path
         var current = fileURL.deletingLastPathComponent().standardizedFileURL

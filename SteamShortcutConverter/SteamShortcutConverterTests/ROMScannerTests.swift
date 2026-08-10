@@ -51,6 +51,39 @@ final class ROMScannerTests: XCTestCase {
         try await scanner.scan(directory: tempRoot, progress: { _ in })
     }
 
+    @discardableResult
+    private func makeCHD(
+        _ relativePath: String,
+        metadataTag: String,
+        logicalBytes: UInt64
+    ) throws -> URL {
+        var data = Data(repeating: 0, count: 141)
+        data.replaceSubrange(0..<8, with: Data("MComprHD".utf8))
+
+        func putBE32(_ value: UInt32, at offset: Int) {
+            data[offset] = UInt8((value >> 24) & 0xff)
+            data[offset + 1] = UInt8((value >> 16) & 0xff)
+            data[offset + 2] = UInt8((value >> 8) & 0xff)
+            data[offset + 3] = UInt8(value & 0xff)
+        }
+        func putBE64(_ value: UInt64, at offset: Int) {
+            for index in 0..<8 {
+                data[offset + index] = UInt8((value >> UInt64(56 - index * 8)) & 0xff)
+            }
+        }
+
+        putBE32(124, at: 8)
+        putBE32(5, at: 12)
+        putBE64(logicalBytes, at: 32)
+        putBE64(124, at: 48)
+        putBE32(4096, at: 56)
+        putBE32(2048, at: 60)
+        data.replaceSubrange(124..<128, with: Data(metadataTag.utf8))
+        data[131] = 1 // metadata length is a 24-bit value in the low bytes
+        data[140] = 0 // one-byte metadata payload
+        return try makeBinaryFile(relativePath, data: data)
+    }
+
     private func rom(_ roms: [DiscoveredROM], named name: String) -> DiscoveredROM? {
         roms.first { $0.url.lastPathComponent == name }
     }
@@ -89,12 +122,70 @@ final class ROMScannerTests: XCTestCase {
         XCTAssertFalse(mp?.platformAmbiguous ?? true)
     }
 
+    func testUniqueExtensionBeatsConflictingFolder() async throws {
+        try makeFile("PS2/Super Mario World.sfc")
+        let roms = try await scan()
+        let game = rom(roms, named: "Super Mario World.sfc")
+        XCTAssertEqual(game?.platform?.id, "snes")
+        XCTAssertFalse(game?.platformAmbiguous ?? true)
+    }
+
     func testUnambiguousExtensionWithoutFolder() async throws {
         try makeFile("Loose/Super Mario World.sfc")
         let roms = try await scan()
         let smw = rom(roms, named: "Super Mario World.sfc")
         XCTAssertEqual(smw?.platform?.id, "snes")   // .sfc maps to snes only
         XCTAssertFalse(smw?.platformAmbiguous ?? true)
+    }
+
+    func testNeutralMDSIsDiscoveredWithoutGuessingPlatform() async throws {
+        try makeFile("Loose/Mystery Disc.mds")
+        let roms = try await scan()
+        let disc = rom(roms, named: "Mystery Disc.mds")
+        XCTAssertNotNil(disc)
+        XCTAssertNil(disc?.platform)
+        XCTAssertFalse(disc?.platformAmbiguous ?? true)
+    }
+
+    func testMDSUsesFolderPlatformWhenAvailable() async throws {
+        try makeFile("PS2/Mystery Disc.mds")
+        let roms = try await scan()
+        let disc = rom(roms, named: "Mystery Disc.mds")
+        XCTAssertEqual(disc?.platform?.id, "ps2")
+        XCTAssertFalse(disc?.platformAmbiguous ?? true)
+    }
+
+    func testCHDInternalDVDMetadataResolvesPS2WithoutFolder() async throws {
+        try makeCHD(
+            "Loose/DiscImage.chd",
+            metadataTag: "DVD ",
+            logicalBytes: 4_617_273_344
+        )
+        let roms = try await scan()
+        let game = rom(roms, named: "DiscImage.chd")
+        XCTAssertEqual(game?.platform?.id, "ps2")
+        XCTAssertFalse(game?.platformAmbiguous ?? true)
+    }
+
+    func testCHDContentBeatsConflictingFolder() async throws {
+        try makeCHD(
+            "PS1/DiscImage.chd",
+            metadataTag: "DVD ",
+            logicalBytes: 4_617_273_344
+        )
+        let roms = try await scan()
+        let game = rom(roms, named: "DiscImage.chd")
+        XCTAssertEqual(game?.platform?.id, "ps2")
+        XCTAssertFalse(game?.platformAmbiguous ?? true)
+    }
+
+    func testCHDInternalCDMetadataRemainsAmbiguousWithoutFolder() async throws {
+        try makeCHD("Loose/DiscImage.chd", metadataTag: "CHT2", logicalBytes: 700_000_000)
+        let roms = try await scan()
+        let game = rom(roms, named: "DiscImage.chd")
+        XCTAssertNotNil(game)
+        XCTAssertNil(game?.platform)
+        XCTAssertTrue(game?.platformAmbiguous ?? false)
     }
 
     func testNonRomFileIsSkipped() async throws {

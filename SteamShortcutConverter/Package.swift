@@ -56,6 +56,14 @@ let package = Package(
             path: "SteamShortcutConverterTests",
             exclude: [
                 "Fixtures/README.md"
+            ],
+            linkerSettings: [
+                .unsafeFlags([
+                    // SwiftPM places the dynamic Sparkle framework beside the
+                    // test product, not inside the xctest bundle. The app target
+                    // has its own app-bundle rpath above; this one is test-only.
+                    "-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../../"
+                ])
             ])
     ]
 )
