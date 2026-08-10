@@ -179,6 +179,21 @@ private struct GameListZone: View {
             for t in targets { viewModel.setSelected(!allIncluded, for: t) }
         }
         Divider()
+        Menu("Assign Platform") {
+            ForEach(viewModel.allPlatforms) { platform in
+                Button(platform.displayName) {
+                    viewModel.setPlatform(platform, for: targets)
+                }
+            }
+        }
+        Menu("Set Folder Platform Rule") {
+            ForEach(viewModel.allPlatforms) { platform in
+                Button(platform.displayName) {
+                    viewModel.setFolderPlatformRule(platform, for: game)
+                }
+            }
+        }
+        Divider()
         Button("Reveal in Finder") {
             NSWorkspace.shared.activateFileViewerSelecting([game.romPath])
         }

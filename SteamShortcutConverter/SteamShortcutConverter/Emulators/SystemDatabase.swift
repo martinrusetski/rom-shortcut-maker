@@ -31,6 +31,25 @@ extension Bundle {
 struct EmulatorOption: Equatable, Hashable {
     let choice: EmulatorChoice      // .standalone(type) or .retroArchCore(core)
     let displayName: String         // "Snes9x" or "bsnes (RetroArch)"
+    let supportedExtensions: Set<String>?
+
+    init(
+        choice: EmulatorChoice,
+        displayName: String,
+        supportedExtensions: Set<String>? = nil
+    ) {
+        self.choice = choice
+        self.displayName = displayName
+        self.supportedExtensions = supportedExtensions
+    }
+
+    /// An omitted rule means the database has no format restriction for this
+    /// option. Explicit rules are normalized with a leading dot.
+    func supports(extension ext: String) -> Bool {
+        guard let supportedExtensions else { return true }
+        let normalized = ext.lowercased().hasPrefix(".") ? ext.lowercased() : "." + ext.lowercased()
+        return supportedExtensions.contains(normalized)
+    }
 }
 
 // MARK: - SystemDatabase
@@ -85,6 +104,7 @@ final class SystemDatabase {
         let emulator: String?
         let core: String?
         let displayName: String?
+        let supportedExtensions: [String]?
     }
 
     private struct EmulatorRecord: Decodable {
@@ -230,18 +250,25 @@ final class SystemDatabase {
                       let type = EmulatorType(rawValue: emulator) else { return nil }
                 return EmulatorOption(
                     choice: .standalone(type),
-                    displayName: option.displayName ?? emulator
+                    displayName: option.displayName ?? emulator,
+                    supportedExtensions: normalizedSupportedExtensions(option.supportedExtensions)
                 )
             case "retroArchCore":
                 guard let core = option.core else { return nil }
                 return EmulatorOption(
                     choice: .retroArchCore(core: core),
-                    displayName: option.displayName ?? core
+                    displayName: option.displayName ?? core,
+                    supportedExtensions: normalizedSupportedExtensions(option.supportedExtensions)
                 )
             default:
                 return nil
             }
         }
+    }
+
+    private func normalizedSupportedExtensions(_ extensions: [String]?) -> Set<String>? {
+        guard let extensions else { return nil }
+        return Set(extensions.map(normalizeExtension))
     }
 
     /// The args template for a choice: the standalone emulator's template, or

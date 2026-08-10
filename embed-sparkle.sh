@@ -20,7 +20,7 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PKG_DIR="${SCRIPT_DIR}/SteamShortcutConverter"
-FRAMEWORK_SRC="$(find "$PKG_DIR/.build" -type d -name 'Sparkle.framework' -path '*release*' | head -1)"
+FRAMEWORK_SRC="$(find "$PKG_DIR/.build" -type d -name 'Sparkle.framework' -ipath '*release*' | head -1)"
 if [ -z "$FRAMEWORK_SRC" ]; then
     echo "embed-sparkle: Sparkle.framework not found under .build (run 'swift build -c release' first)" >&2
     exit 1

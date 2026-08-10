@@ -32,6 +32,7 @@ final class MainViewModel: ObservableObject {
     @Published var outputDirectory: String = ""
     @Published var sourceMode: SourceMode = .scan
     @Published var steamGridDBApiKey: String = ""
+    @Published var hashDatabasePath: String = ""
     @Published var removeOrphanedBundles: Bool = false
     @Published var isProcessing: Bool = false
     @Published var progressValue: Double = 0.0
@@ -66,6 +67,9 @@ final class MainViewModel: ObservableObject {
     private let shortcutFilter: ShortcutFilter = DefaultShortcutFilter()
 
     private var config = AppConfigurationV2.default
+    /// Fresh scan evidence, keyed like game overrides. Kept out of persisted
+    /// GameEntry state so diagnostics can evolve independently of conversions.
+    private var detectionByKey: [String: PlatformDetectionInfo] = [:]
 
     /// Pre-override snapshot of each entry, captured right after a scan/import
     /// (default title, resolved platform, default emulator, default args). Used
@@ -150,9 +154,11 @@ final class MainViewModel: ObservableObject {
         scanDirectory = config.lastScanDirectory ?? ""
         removeOrphanedBundles = config.removeOrphanedBundles
         steamGridDBApiKey = config.steamGridDBApiKey ?? ""
+        hashDatabasePath = config.hashDatabasePath ?? ""
         sourceMode = SourceMode(rawValue: config.sourceMode) ?? .scan
         lastConversionDate = config.lastConversionDate
         collapsedPlatforms = config.collapsedPlatforms
+        detectionByKey = [:]
     }
 
     private func persist() {
@@ -160,6 +166,7 @@ final class MainViewModel: ObservableObject {
         config.lastScanDirectory = scanDirectory.isEmpty ? nil : scanDirectory
         config.removeOrphanedBundles = removeOrphanedBundles
         config.steamGridDBApiKey = steamGridDBApiKey.isEmpty ? nil : steamGridDBApiKey
+        config.hashDatabasePath = hashDatabasePath.isEmpty ? nil : hashDatabasePath
         config.sourceMode = sourceMode.rawValue
         config.lastConversionDate = lastConversionDate
         config.collapsedPlatforms = collapsedPlatforms
@@ -239,8 +246,30 @@ final class MainViewModel: ObservableObject {
             let discovered = try await scanner.scan(directory: URL(fileURLWithPath: scanDirectory)) { [weak self] fraction in
                 Task { @MainActor in self?.progressValue = fraction }
             }
+            let hashInputs = discovered.compactMap { rom -> LocalHashInput? in
+                guard rom.platform == nil else { return nil }
+                return LocalHashInput(
+                    path: rom.url.standardizedFileURL.path,
+                    fileSize: rom.fileSize
+                )
+            }
+            let hashMatches = await LocalHashDatabase.matches(
+                inputs: hashInputs,
+                databaseURL: hashDatabasePath.isEmpty ? nil : URL(fileURLWithPath: hashDatabasePath)
+            )
             emulatorConfig.refreshDetection()
-            games = discovered.map { makeEntry(from: $0) }
+            games = discovered.map {
+                makeEntry(
+                    from: $0,
+                    hashMatch: hashMatches[$0.url.standardizedFileURL.path]
+                )
+            }
+            detectionByKey = Dictionary(uniqueKeysWithValues: zip(games, discovered).compactMap { game, rom in
+                let hashMatch = hashMatches[rom.url.standardizedFileURL.path]
+                guard let detection = enrichedDetection(rom.detection, hashMatch: hashMatch) else { return nil }
+                return (game.stableKey, detection)
+            })
+            applyFolderPlatformRules(to: &games)
             captureDefaults()
             applyOverrides()
             applyCachedArtwork()
@@ -254,7 +283,7 @@ final class MainViewModel: ObservableObject {
         }
     }
 
-    private func makeEntry(from rom: DiscoveredROM) -> GameEntry {
+    private func makeEntry(from rom: DiscoveredROM, hashMatch: LocalHashMatch? = nil) -> GameEntry {
         // A multi-disc game with no existing .m3u gets a generated playlist (in
         // our app folder, absolute paths) as its launch target.
         var romPath = rom.url
@@ -267,9 +296,12 @@ final class MainViewModel: ObservableObject {
         // The parser still runs for romMetadata, but a scanner-provided title
         // hint (e.g. a PS3 PARAM.SFO TITLE) beats the filename-derived title.
         let metadata = filenameParser.parse(filename: rom.url.lastPathComponent)
-        let platform = rom.platform ?? Platform(id: "unknown", displayName: "Unknown")
+        let hashPlatform = hashMatch.flatMap { match in
+            database.allPlatforms.first { $0.id == match.platformID }
+        }
+        let platform = rom.platform ?? hashPlatform ?? Platform(id: "unknown", displayName: "Unknown")
         var entry = GameEntry(
-            title: rom.titleHint ?? metadata.title,
+            title: rom.titleHint ?? hashMatch?.title ?? metadata.title,
             romPath: romPath,
             romMetadata: metadata,
             platform: platform,
@@ -278,10 +310,26 @@ final class MainViewModel: ObservableObject {
             alternateImages: rom.alternateImages,
             discCount: rom.discCount
         )
-        if rom.platform != nil, let choice = emulatorConfig.defaultChoice(for: platform) {
+        if platform.id != "unknown",
+           let choice = emulatorConfig.defaultChoice(for: platform, romExtension: romPath.pathExtension) {
             assignEmulator(&entry, choice: choice)
         }
         return entry
+    }
+
+    private func enrichedDetection(
+        _ detection: PlatformDetectionInfo?,
+        hashMatch: LocalHashMatch?
+    ) -> PlatformDetectionInfo? {
+        guard var detection,
+              let hashMatch,
+              let platform = database.allPlatforms.first(where: { $0.id == hashMatch.platformID }) else {
+            return detection
+        }
+        detection.candidates = [platform]
+        detection.evidence.append("Exact local hash database match.")
+        detection.resolvedBy = "local hash database"
+        return detection
     }
 
     private func assignEmulator(_ entry: inout GameEntry, choice: EmulatorChoice) {
@@ -357,6 +405,7 @@ final class MainViewModel: ObservableObject {
             let shortcuts = try ShortcutParser().parseShortcuts(from: vdfData)
             let romShortcuts = shortcutFilter.filterROMShortcuts(from: shortcuts)
             games = vdfBridge.makeEntries(from: romShortcuts, legacyCustomNames: config.legacyCustomNames)
+            detectionByKey = [:]
             captureDefaults()
             applyOverrides()
             applyCachedArtwork()
@@ -389,11 +438,38 @@ final class MainViewModel: ObservableObject {
     func setPlatform(_ platform: Platform, for game: GameEntry) {
         updateGame(game.id) {
             $0.platform = platform
-            if let choice = self.emulatorConfig.defaultChoice(for: platform) {
+            if let choice = self.emulatorConfig.defaultChoice(
+                for: platform,
+                romExtension: $0.launchPath.pathExtension
+            ) {
                 self.assignEmulator(&$0, choice: choice)
+            } else {
+                self.clearEmulator(&$0)
             }
         }
         updateOverride(game.stableKey) { $0.platform = platform.id }
+    }
+
+    /// Assign a platform override to several games, used by the Unknown bucket's
+    /// batch action.
+    func setPlatform(_ platform: Platform, for games: [GameEntry]) {
+        for game in games { setPlatform(platform, for: game) }
+    }
+
+    /// Persist an explicit fallback rule for a source folder and apply it to
+    /// unresolved games below that folder. Stronger automatic detections and
+    /// explicit per-game overrides are left untouched.
+    func setFolderPlatformRule(_ platform: Platform, for game: GameEntry) {
+        let directory = detectionByKey[game.stableKey]?.sourceDirectory
+            ?? game.romPath.deletingLastPathComponent().standardizedFileURL
+        config.folderPlatformRules[directory.path] = platform.id
+        applyFolderPlatformRules(to: &games)
+        persist()
+    }
+
+    /// Detection evidence used by the Unknown diagnostics view.
+    func detectionInfo(for game: GameEntry) -> PlatformDetectionInfo? {
+        detectionByKey[game.stableKey]
     }
 
     func setLaunchImage(_ url: URL, for game: GameEntry) {
@@ -402,7 +478,7 @@ final class MainViewModel: ObservableObject {
     }
 
     func availableOptions(for game: GameEntry) -> [EmulatorOption] {
-        emulatorConfig.availableOptions(for: game.platform)
+        emulatorConfig.availableOptions(for: game.platform, romExtension: game.launchPath.pathExtension)
     }
 
     // MARK: - Per-platform default
@@ -417,12 +493,20 @@ final class MainViewModel: ObservableObject {
 
     var allPlatforms: [Platform] { database.allPlatforms }
 
+    var allPlatformsIncludingUnknown: [Platform] {
+        [Platform(id: "unknown", displayName: "Unknown")] + database.allPlatforms
+    }
+
     func setDefaultChoice(_ choice: EmulatorChoice, for platform: Platform) {
         emulatorConfig.setDefaultChoice(choice, for: platform)
         for index in games.indices where games[index].platform == platform {
             // Only games without a per-game emulator override follow the default.
             if config.gameOverrides[games[index].stableKey]?.emulator == nil {
-                assignEmulator(&games[index], choice: choice)
+                if availableOptions(for: games[index]).contains(where: { $0.choice == choice }) {
+                    assignEmulator(&games[index], choice: choice)
+                } else if games[index].emulator == choice {
+                    clearEmulator(&games[index])
+                }
             }
         }
     }
@@ -553,6 +637,11 @@ final class MainViewModel: ObservableObject {
 
     func saveSettings() { persist() }
 
+    func setHashDatabase(url: URL?) {
+        hashDatabasePath = url?.path ?? ""
+        persist()
+    }
+
     // MARK: - Per-game overrides & Properties
 
     private func captureDefaults() {
@@ -651,8 +740,13 @@ final class MainViewModel: ObservableObject {
             case .platform:
                 if let base { entry.platform = base.platform }
                 // Re-resolve the default emulator for the restored platform.
-                if let choice = self.emulatorConfig.defaultChoice(for: entry.platform) {
+                if let choice = self.emulatorConfig.defaultChoice(
+                    for: entry.platform,
+                    romExtension: entry.launchPath.pathExtension
+                ) {
                     self.assignEmulator(&entry, choice: choice)
+                } else {
+                    self.clearEmulator(&entry)
                 }
             case .emulator:
                 if let base {
@@ -853,6 +947,54 @@ final class MainViewModel: ObservableObject {
     }
 
     // MARK: - Helpers
+
+    private func applyFolderPlatformRules(to games: inout [GameEntry]) {
+        guard !config.folderPlatformRules.isEmpty else { return }
+
+        for index in games.indices {
+            let game = games[index]
+            guard game.platform.id == "unknown",
+                  config.gameOverrides[game.stableKey]?.platform == nil,
+                  let detection = detectionByKey[game.stableKey],
+                  let rule = matchingFolderRule(for: detection.sourceDirectory),
+                  let platform = database.allPlatforms.first(where: { $0.id == rule.platformID }) else {
+                continue
+            }
+
+            games[index].platform = platform
+            if let choice = emulatorConfig.defaultChoice(
+                for: platform,
+                romExtension: games[index].launchPath.pathExtension
+            ) {
+                assignEmulator(&games[index], choice: choice)
+            }
+            var updatedDetection = detection
+            updatedDetection.candidates = [platform]
+            updatedDetection.evidence.append("Explicit folder rule: \(platform.displayName).")
+            updatedDetection.resolvedBy = "explicit folder rule"
+            detectionByKey[game.stableKey] = updatedDetection
+        }
+    }
+
+    private func clearEmulator(_ entry: inout GameEntry) {
+        entry.emulator = nil
+        entry.emulatorPath = nil
+        entry.argsTemplate = ""
+    }
+
+    private func matchingFolderRule(for sourceDirectory: URL) -> (path: String, platformID: String)? {
+        let scanRoot = URL(fileURLWithPath: scanDirectory).standardizedFileURL.path
+        var current = sourceDirectory.standardizedFileURL
+        while current.path == scanRoot || current.path.hasPrefix(scanRoot + "/") {
+            if let platformID = config.folderPlatformRules[current.path] {
+                return (current.path, platformID)
+            }
+            let parent = current.deletingLastPathComponent()
+            if parent.path == current.path { break }
+            current = parent
+        }
+        return nil
+    }
 
     private func updateGame(_ id: UUID, _ transform: (inout GameEntry) -> Void) {
         guard let index = games.firstIndex(where: { $0.id == id }) else { return }

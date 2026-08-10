@@ -105,7 +105,8 @@
       "chdMediaTypes": ["cd"],
       "libretroSystems": ["playstation"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "DuckStation" }
+        { "type": "standalone", "emulator": "DuckStation",
+          "supportedExtensions": [".cue", ".chd", ".bin", ".m3u", ".pbp", ".ecm", ".ccd", ".mds"] }
       ]
     },
     {
@@ -116,9 +117,12 @@
       "chdMediaTypes": ["cd", "dvd"],
       "libretroSystems": ["playstation2"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "PCSX2" },
-        { "type": "standalone", "emulator": "ARMSX2" },
-        { "type": "standalone", "emulator": "Play!" }
+        { "type": "standalone", "emulator": "PCSX2",
+          "supportedExtensions": [".iso", ".chd", ".cso", ".bin", ".m3u", ".mds"] },
+        { "type": "standalone", "emulator": "ARMSX2",
+          "supportedExtensions": [".iso", ".chd", ".cso", ".bin", ".m3u", ".mds"] },
+        { "type": "standalone", "emulator": "Play!",
+          "supportedExtensions": [".iso", ".chd", ".cso", ".bin", ".m3u"] }
       ]
     },
     {
@@ -130,7 +134,8 @@
       "chdMaxLogicalBytes": 2000000000,
       "libretroSystems": ["playstation_portable"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "PPSSPP" }
+        { "type": "standalone", "emulator": "PPSSPP",
+          "supportedExtensions": [".iso", ".cso", ".chd", ".pbp", ".m3u"] }
       ]
     },
     {
@@ -161,7 +166,8 @@
       "chdMediaTypes": ["cd"],
       "libretroSystems": ["sega_saturn"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "Mednafen" }
+        { "type": "standalone", "emulator": "Mednafen",
+          "supportedExtensions": [".cue", ".chd", ".m3u", ".ccd", ".mds"] }
       ]
     },
     {
@@ -172,8 +178,10 @@
       "chdMediaTypes": ["gdrom"],
       "libretroSystems": ["dreamcast"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "Flycast" },
-        { "type": "standalone", "emulator": "Redream" }
+        { "type": "standalone", "emulator": "Flycast",
+          "supportedExtensions": [".cdi", ".chd", ".gdi", ".cue", ".m3u", ".ccd"] },
+        { "type": "standalone", "emulator": "Redream",
+          "supportedExtensions": [".cdi", ".chd", ".gdi", ".cue"] }
       ]
     },
     {
@@ -184,7 +192,8 @@
       "chdMediaTypes": ["hardDisk"],
       "libretroSystems": ["arcade", "mame", "fb_alpha", "neogeo", "hbmame"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "MAME" }
+        { "type": "standalone", "emulator": "MAME",
+          "supportedExtensions": [".zip", ".chd"] }
       ]
     },
     {

@@ -82,6 +82,9 @@ struct GamePropertiesView: View {
             Form {
                 ArtworkSection(viewModel: viewModel, game: game)
                 PlatformEmulatorSection(viewModel: viewModel, game: game)
+                if let detection = viewModel.detectionInfo(for: game) {
+                    DetectionSection(info: detection)
+                }
                 LaunchSection(viewModel: viewModel, game: game)
                 Section {
                     Button("Reset All Overrides") {
@@ -278,7 +281,7 @@ private struct PlatformEmulatorSection: View {
                     get: { game.platform },
                     set: { viewModel.setPlatform($0, for: game) }
                 )) {
-                    ForEach(viewModel.allPlatforms) { platform in
+                    ForEach(viewModel.allPlatformsIncludingUnknown) { platform in
                         Text(platform.displayName).tag(platform)
                     }
                 }
@@ -291,7 +294,10 @@ private struct PlatformEmulatorSection: View {
             let options = viewModel.availableOptions(for: game)
             if options.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
-                    Label("No emulator installed for \(game.platform.displayName)", systemImage: "exclamationmark.triangle")
+                    let message = game.platform.id == "unknown"
+                        ? "Assign a platform before choosing an emulator"
+                        : "No compatible emulator installed for .\(game.launchPath.pathExtension.lowercased())"
+                    Label(message, systemImage: "exclamationmark.triangle")
                         .foregroundColor(.orange)
                     Button("Open Settings…") { openSettingsWindow() }
                 }
@@ -323,6 +329,30 @@ private struct PlatformEmulatorSection: View {
     /// is 14+). Ventura renamed the selector to `showSettingsWindow:`.
     private func openSettingsWindow() {
         NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+    }
+}
+
+private struct DetectionSection: View {
+    let info: PlatformDetectionInfo
+
+    var body: some View {
+        Section("Detection") {
+            Text(info.summary)
+                .foregroundColor(info.resolvedBy == nil ? .orange : .secondary)
+
+            ForEach(Array(info.evidence.enumerated()), id: \.offset) { _, evidence in
+                Text(evidence)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            LabeledContent("Source folder") {
+                Text(info.sourceDirectory.path)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundColor(.secondary)
+            }
+        }
     }
 }
 

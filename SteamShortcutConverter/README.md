@@ -86,6 +86,10 @@ which `Package.swift` excludes) and runs the full suite without launching the GU
 > Xcode test target is reconfigured as a standalone (non-hosted) unit-test bundle,
 > use `swift test`.
 
+## Optional Hash Database
+
+The Settings window can load a local exact-match hash database for unresolved ROMs. The file may be a JSON object with an `entries` array or a bare JSON array; each entry contains `sha1`, an optional `size`, a `platform` id, and an optional `title`, for example: `{"entries":[{"sha1":"...","size":4617273344,"platform":"ps2","title":"Rogue Galaxy"}]}`. Hash matching is opt-in, runs only for unresolved files, and never falls back to filenames.
+
 ## Property-Based Testing (Optional)
 
 The project includes optional support for property-based testing using SwiftCheck. To enable:

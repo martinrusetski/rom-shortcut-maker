@@ -41,6 +41,7 @@ trap 'rm -rf "$TEMP_BUILD_DIR"' EXIT
 APP="$TEMP_BUILD_DIR/$APP_NAME.app"
 
 echo "Building $APP_NAME for $ARCH..."
+(cd "$PKG_DIR" && swift build -c release --arch "$ARCH")
 BIN_DIR="$(cd "$PKG_DIR" && swift build -c release --arch "$ARCH" --show-bin-path)"
 BINARY="$BIN_DIR/$BINARY_NAME"
 

@@ -172,10 +172,25 @@ final class EmulatorConfigManager {
         return options
     }
 
+    /// Format-aware availability for a specific launch image. Options without an
+    /// explicit compatibility rule remain available.
+    func availableOptions(for platform: Platform, romExtension: String) -> [EmulatorOption] {
+        availableOptions(for: platform).filter { $0.supports(extension: romExtension) }
+    }
+
     /// The choice to assign automatically: the per-platform default if set and
     /// still available, otherwise the first available option.
     func defaultChoice(for platform: Platform) -> EmulatorChoice? {
         let available = availableOptions(for: platform)
+        if let configured = config.defaults[platform.id],
+           available.contains(where: { $0.choice == configured }) {
+            return configured
+        }
+        return available.first?.choice
+    }
+
+    func defaultChoice(for platform: Platform, romExtension: String) -> EmulatorChoice? {
+        let available = availableOptions(for: platform, romExtension: romExtension)
         if let configured = config.defaults[platform.id],
            available.contains(where: { $0.choice == configured }) {
             return configured

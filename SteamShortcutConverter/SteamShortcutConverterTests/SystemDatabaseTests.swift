@@ -114,6 +114,14 @@ final class SystemDatabaseTests: XCTestCase {
         XCTAssertTrue(database.platforms(forExtension: ".mds").isEmpty)
     }
 
+    func testPerEmulatorFormatCompatibilityRules() {
+        let options = database.emulatorOptions(for: Platform(id: "ps2", displayName: "PS2"))
+        let pcsx2 = options.first { $0.choice == .standalone(.pcsx2) }
+        let play = options.first { $0.choice == .standalone(.play) }
+        XCTAssertTrue(pcsx2?.supports(extension: ".mds") == true)
+        XCTAssertFalse(play?.supports(extension: ".mds") == true)
+    }
+
     // MARK: - Emulator options
 
     func testSnesStandaloneOptions() {

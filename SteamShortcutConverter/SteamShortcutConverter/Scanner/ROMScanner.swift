@@ -16,8 +16,8 @@ struct DiscoveredROM: Equatable {
     let romExtension: String              // normalized, with leading dot, e.g. ".sfc"
     let platform: Platform?               // resolved by inference (nil if ambiguous)
     let candidateEmulators: [EmulatorType]
-    let platformAmbiguous: Bool           // extension matched multiple platforms and
-                                          // the folder didn't disambiguate
+    let platformAmbiguous: Bool           // no unique extension/content/folder signal
+    let detection: PlatformDetectionInfo?
 
     // MARK: Multi-disc / multi-file
     /// Track / disc files referenced by this entry (for change hashing).
@@ -48,6 +48,7 @@ struct DiscoveredROM: Equatable {
         platform: Platform?,
         candidateEmulators: [EmulatorType],
         platformAmbiguous: Bool,
+        detection: PlatformDetectionInfo? = nil,
         memberFiles: [URL] = [],
         alternateImages: [URL] = [],
         discPaths: [URL] = [],
@@ -61,6 +62,7 @@ struct DiscoveredROM: Equatable {
         self.platform = platform
         self.candidateEmulators = candidateEmulators
         self.platformAmbiguous = platformAmbiguous
+        self.detection = detection
         self.memberFiles = memberFiles
         self.alternateImages = alternateImages
         self.discPaths = discPaths
@@ -95,6 +97,7 @@ final class ROMScanner: ROMScanning {
     private let database: SystemDatabase
     private let filenameParser: ROMFilenameParser
     private let chdInspector = CHDImageInspector()
+    private let discContentInspector = DiscContentInspector()
 
     init(database: SystemDatabase) {
         self.database = database
@@ -250,6 +253,7 @@ final class ROMScanner: ROMScanning {
                 platform: platformInfo.platform,
                 candidateEmulators: candidateEmulators(for: platformInfo.platform),
                 platformAmbiguous: platformInfo.ambiguous,
+                detection: platformInfo.detection,
                 memberFiles: dedupe(addOns),
                 alternateImages: [],
                 discPaths: []
@@ -287,6 +291,7 @@ final class ROMScanner: ROMScanning {
                 platform: platformInfo.platform,
                 candidateEmulators: candidateEmulators(for: platformInfo.platform),
                 platformAmbiguous: platformInfo.ambiguous,
+                detection: platformInfo.detection,
                 memberFiles: dedupe(allMembers),
                 alternateImages: [],
                 discPaths: discPaths,
@@ -314,6 +319,7 @@ final class ROMScanner: ROMScanning {
             platform: platformInfo.platform,
             candidateEmulators: candidateEmulators(for: platformInfo.platform),
             platformAmbiguous: platformInfo.ambiguous,
+            detection: platformInfo.detection,
             memberFiles: dedupe(allMembers),
             alternateImages: alternates,
             discPaths: [],
@@ -321,26 +327,76 @@ final class ROMScanner: ROMScanning {
         )
     }
 
-    private func resolvePlatform(for url: URL, root: URL) -> (platform: Platform?, ambiguous: Bool) {
+    private func resolvePlatform(
+        for url: URL,
+        root: URL
+    ) -> (platform: Platform?, ambiguous: Bool, detection: PlatformDetectionInfo) {
         let extensionName = normalizedExtension(of: url)
         let byExtension = database.platforms(forExtension: extensionName)
-        if byExtension.count == 1 { return (byExtension[0], false) }
+        let extensionLabel = extensionName.isEmpty ? "no extension" : extensionName
+        var evidence = [
+            byExtension.isEmpty
+                ? "Extension \(extensionLabel) has no platform mapping."
+                : "Extension \(extensionLabel) candidates: \(byExtension.map(\.displayName).joined(separator: ", "))."
+        ]
+        var candidates = byExtension
+
+        func info(
+            candidates: [Platform],
+            resolvedBy: String?
+        ) -> PlatformDetectionInfo {
+            PlatformDetectionInfo(
+                fileExtension: extensionName,
+                candidates: candidates,
+                evidence: evidence,
+                resolvedBy: resolvedBy,
+                sourceDirectory: url.deletingLastPathComponent().standardizedFileURL
+            )
+        }
+
+        if byExtension.count == 1 {
+            return (byExtension[0], false, info(
+                candidates: byExtension,
+                resolvedBy: "unique extension \(extensionLabel)"
+            ))
+        }
+
         if extensionName == ".chd", byExtension.count > 1,
            let imageInfo = chdInspector.inspect(url: url) {
+            evidence.append("CHD metadata: \(imageInfo.mediaType.rawValue), \(imageInfo.logicalBytes) logical bytes.")
             let mediaPlatformIDs = Set(database.platforms(
                 forCHDMediaType: imageInfo.mediaType.rawValue,
                 logicalBytes: imageInfo.logicalBytes
             ).map(\.id))
             let byMedia = byExtension.filter { mediaPlatformIDs.contains($0.id) }
-            if byMedia.count == 1 { return (byMedia[0], false) }
+            if byMedia.count == 1 {
+                return (byMedia[0], false, info(candidates: byMedia, resolvedBy: "CHD metadata"))
+            }
+            if !byMedia.isEmpty { candidates = byMedia }
+        }
+
+        if byExtension.count != 1,
+           let probe = discContentInspector.inspect(url: url) {
+            evidence.append(contentsOf: probe.descriptions.map { "Content signature: \($0)." })
+            let contentPlatforms = database.allPlatforms.filter { probe.platformIDs.contains($0.id) }
+            if contentPlatforms.count == 1 {
+                return (contentPlatforms[0], false, info(
+                    candidates: contentPlatforms,
+                    resolvedBy: "disc content"
+                ))
+            }
+            if !contentPlatforms.isEmpty { candidates = contentPlatforms }
         }
         // Folder names are deliberately last: they are useful organization
         // hints, but must not override a stronger extension or image signal.
         if let folderPlatform = inferPlatform(for: url, root: root) {
-            return (folderPlatform, false)
+            evidence.append("Folder fallback: \(folderPlatform.displayName).")
+            return (folderPlatform, false, info(
+                candidates: [folderPlatform],
+                resolvedBy: "folder fallback"
+            ))
         }
-        if byExtension.count > 1 { return (nil, true) }
-        return (nil, false)
+        return (nil, candidates.count > 1, info(candidates: candidates, resolvedBy: nil))
     }
 
     private func dedupe(_ urls: [URL]) -> [URL] {
@@ -437,6 +493,13 @@ final class ROMScanner: ROMScanning {
             platform: platform,
             candidateEmulators: candidateEmulators(for: platform),
             platformAmbiguous: false,
+            detection: PlatformDetectionInfo(
+                fileExtension: normalizedExtension(of: layout.eboot),
+                candidates: [platform],
+                evidence: ["PS3 extracted-disc layout detected."],
+                resolvedBy: "PS3 folder structure",
+                sourceDirectory: gameRoot.standardizedFileURL
+            ),
             titleHint: ParamSFO.title(of: layout.paramSFO) ?? gameRoot.lastPathComponent,
             artworkHint: layout.icon
         )

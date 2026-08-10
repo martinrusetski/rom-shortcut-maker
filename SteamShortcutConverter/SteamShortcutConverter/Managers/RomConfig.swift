@@ -38,6 +38,7 @@ struct AppConfigurationV2: Codable, Equatable {
     var outputDirectory: String?
     var removeOrphanedBundles: Bool
     var steamGridDBApiKey: String?
+    var hashDatabasePath: String?
     var gameOverrides: [String: GameOverride]
     var lastConversionDate: Date?
     /// v1 custom names (keyed by Steam appID), preserved through migration so they
@@ -46,6 +47,9 @@ struct AppConfigurationV2: Codable, Equatable {
     /// Platform ids whose list section the user has collapsed. Persisted so the
     /// expand/collapse state survives relaunch.
     var collapsedPlatforms: Set<String>
+    /// Explicit user-created folder rules for unresolved ROMs. Keys are
+    /// standardized source-directory paths and values are platform ids.
+    var folderPlatformRules: [String: String]
 
     init(
         version: Int = 2,
@@ -54,10 +58,12 @@ struct AppConfigurationV2: Codable, Equatable {
         outputDirectory: String? = nil,
         removeOrphanedBundles: Bool = false,
         steamGridDBApiKey: String? = nil,
+        hashDatabasePath: String? = nil,
         gameOverrides: [String: GameOverride] = [:],
         lastConversionDate: Date? = nil,
         legacyCustomNames: [UInt32: String] = [:],
-        collapsedPlatforms: Set<String> = []
+        collapsedPlatforms: Set<String> = [],
+        folderPlatformRules: [String: String] = [:]
     ) {
         self.version = version
         self.sourceMode = sourceMode
@@ -65,10 +71,12 @@ struct AppConfigurationV2: Codable, Equatable {
         self.outputDirectory = outputDirectory
         self.removeOrphanedBundles = removeOrphanedBundles
         self.steamGridDBApiKey = steamGridDBApiKey
+        self.hashDatabasePath = hashDatabasePath
         self.gameOverrides = gameOverrides
         self.lastConversionDate = lastConversionDate
         self.legacyCustomNames = legacyCustomNames
         self.collapsedPlatforms = collapsedPlatforms
+        self.folderPlatformRules = folderPlatformRules
     }
 
     // Custom decoder so newly-added fields (`collapsedPlatforms`, and any future
@@ -83,10 +91,12 @@ struct AppConfigurationV2: Codable, Equatable {
         outputDirectory = try c.decodeIfPresent(String.self, forKey: .outputDirectory)
         removeOrphanedBundles = try c.decodeIfPresent(Bool.self, forKey: .removeOrphanedBundles) ?? false
         steamGridDBApiKey = try c.decodeIfPresent(String.self, forKey: .steamGridDBApiKey)
+        hashDatabasePath = try c.decodeIfPresent(String.self, forKey: .hashDatabasePath)
         gameOverrides = try c.decodeIfPresent([String: GameOverride].self, forKey: .gameOverrides) ?? [:]
         lastConversionDate = try c.decodeIfPresent(Date.self, forKey: .lastConversionDate)
         legacyCustomNames = try c.decodeIfPresent([UInt32: String].self, forKey: .legacyCustomNames) ?? [:]
         collapsedPlatforms = try c.decodeIfPresent(Set<String>.self, forKey: .collapsedPlatforms) ?? []
+        folderPlatformRules = try c.decodeIfPresent([String: String].self, forKey: .folderPlatformRules) ?? [:]
     }
 
     static var `default`: AppConfigurationV2 { AppConfigurationV2() }

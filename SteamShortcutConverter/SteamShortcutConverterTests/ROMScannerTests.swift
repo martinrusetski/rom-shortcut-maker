@@ -84,6 +84,26 @@ final class ROMScannerTests: XCTestCase {
         return try makeBinaryFile(relativePath, data: data)
     }
 
+    @discardableResult
+    private func makeUncompressedCSO(_ relativePath: String, marker: String) throws -> URL {
+        var data = Data(repeating: 0, count: 2_080)
+        data.replaceSubrange(0..<4, with: Data("CISO".utf8))
+
+        func putLE32(_ value: UInt32, at offset: Int) {
+            data[offset] = UInt8(value & 0xff)
+            data[offset + 1] = UInt8((value >> 8) & 0xff)
+            data[offset + 2] = UInt8((value >> 16) & 0xff)
+            data[offset + 3] = UInt8((value >> 24) & 0xff)
+        }
+
+        putLE32(2_048, at: 8)
+        putLE32(2_048, at: 16)
+        putLE32(0x80000020, at: 24)
+        putLE32(0x80000820, at: 28)
+        data.replaceSubrange(32..<32 + marker.utf8.count, with: Data(marker.utf8))
+        return try makeBinaryFile(relativePath, data: data)
+    }
+
     private func rom(_ roms: [DiscoveredROM], named name: String) -> DiscoveredROM? {
         roms.first { $0.url.lastPathComponent == name }
     }
@@ -177,6 +197,42 @@ final class ROMScannerTests: XCTestCase {
         let game = rom(roms, named: "DiscImage.chd")
         XCTAssertEqual(game?.platform?.id, "ps2")
         XCTAssertFalse(game?.platformAmbiguous ?? true)
+    }
+
+    func testISOContentSignatureResolvesPS2WithoutFolder() async throws {
+        try makeBinaryFile("Loose/Disc.iso", data: Data("CDVDGEN".utf8))
+        let roms = try await scan()
+        let game = rom(roms, named: "Disc.iso")
+        XCTAssertEqual(game?.platform?.id, "ps2")
+        XCTAssertFalse(game?.platformAmbiguous ?? true)
+        XCTAssertTrue(game?.detection?.evidence.contains { $0.contains("PS2 DVD") } ?? false)
+    }
+
+    func testMDFPayloadSignatureResolvesPSPForGenericMDS() async throws {
+        try makeFile("Loose/Disc.mds")
+        try makeBinaryFile("Loose/Disc.mdf", data: Data("PSP_GAME".utf8))
+        let roms = try await scan()
+        let game = rom(roms, named: "Disc.mds")
+        XCTAssertEqual(game?.platform?.id, "psp")
+        XCTAssertFalse(game?.platformAmbiguous ?? true)
+    }
+
+    func testCSOPayloadSignatureResolvesPSPWithoutFolder() async throws {
+        try makeUncompressedCSO("Loose/Disc.cso", marker: "PSP_GAME")
+        let roms = try await scan()
+        let game = rom(roms, named: "Disc.cso")
+        XCTAssertEqual(game?.platform?.id, "psp")
+        XCTAssertFalse(game?.platformAmbiguous ?? true)
+    }
+
+    func testUnknownDetectionRetainsCandidatesAndEvidence() async throws {
+        try makeFile("Loose/Mystery.iso")
+        let roms = try await scan()
+        let game = rom(roms, named: "Mystery.iso")
+        XCTAssertNil(game?.platform)
+        XCTAssertEqual(game?.detection?.candidates.count, 6)
+        XCTAssertTrue(game?.detection?.summary.contains("Possible platforms") ?? false)
+        XCTAssertTrue(game?.detection?.evidence.contains { $0.contains(".iso") } ?? false)
     }
 
     func testCHDInternalCDMetadataRemainsAmbiguousWithoutFolder() async throws {
@@ -297,6 +353,17 @@ final class ROMScannerTests: XCTestCase {
         XCTAssertEqual(roms[0].discCount, 2, "disc count is the m3u's entries, not member files")
         // The disc cues are members, not separate games.
         XCTAssertFalse(roms.contains { $0.url.pathExtension == "cue" })
+    }
+
+    func testM3URecursivelyInspectsNestedCuePayload() async throws {
+        try makeFile("Loose/Disc 1.bin", contents: "SEGASATURN")
+        try makeFile("Loose/Disc 1.cue", contents: "FILE \"Disc 1.bin\" BINARY\n")
+        try makeFile("Loose/Panzer Dragoon Saga.m3u", contents: "Disc 1.cue\n")
+
+        let roms = try await scan()
+        let game = rom(roms, named: "Panzer Dragoon Saga.m3u")
+        XCTAssertEqual(game?.platform?.id, "saturn")
+        XCTAssertFalse(game?.platformAmbiguous ?? true)
     }
 
     func testMultiDiscWithoutM3UIsGrouped() async throws {
