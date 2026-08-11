@@ -1,6 +1,6 @@
 # Rom Shortcut Maker
 
-A native macOS application that scans your ROM directories, identifies each game and its platform, fetches artwork from SteamGridDB, and generates standalone `.app` launcher bundles that point at your installed emulators. Launch your ROM games directly from Finder, Spotlight, or the Dock — no Steam required.
+A native macOS application that scans your ROM directories, identifies each game and its platform, fetches artwork from SteamGridDB, and generates standalone `.app` launcher bundles that point at your installed emulators. Launch your ROM games directly from Finder, Spotlight, or the Dock - no Steam required.
 
 Importing an existing Steam ROM Manager `shortcuts.vdf` is still supported as a secondary input path.
 
@@ -15,49 +15,54 @@ brew install --cask rom-shortcut-maker
 
 The cask clears the quarantine attribute automatically, so the app launches without a Gatekeeper prompt, and updates install in place with `brew upgrade`.
 
-**Direct download:** Grab the latest `RomShortcutMaker-vX.Y.Z.dmg` from [Releases](https://github.com/martinrusetski/rom-shortcut-maker/releases), drag the app to Applications, then — because the app is ad-hoc signed rather than notarized — run once:
+**Direct download:** Grab the latest `RomShortcutMaker-vX.Y.Z.dmg` from [Releases](https://github.com/martinrusetski/rom-shortcut-maker/releases), drag the app to Applications, then - because the app is ad-hoc signed rather than notarized - run once:
 
 ```sh
 xattr -cr "/Applications/Rom Shortcut Maker.app"
 ```
 
-Either way, once installed the app updates itself in the background (via Sparkle) — you won't need to repeat these steps for future versions.
+Either way, once installed the app updates itself in the background (via Sparkle) - you won't need to repeat these steps for future versions.
 
 ## Key Features
 
 - **Direct ROM scanning**: Point it at a ROM directory and it walks the tree, identifying games and platforms. Platform is inferred folder-first (e.g. `/ROMs/SNES/…`), falling back to file extension.
+- **Searchable game library**: Review every game in one compact table, with platform, emulator, source file, generation status, and filters for included, changed, or unresolved games.
 - **Emulator resolution**: Detects installed standalone emulators and RetroArch cores, and offers every runnable option per game. Set a default emulator per platform, or override per game.
-- **Artwork from SteamGridDB**: Fetches icons (falling back to grids for obscure titles), cached on disk and reused across re-scans.
-- **Native app bundles**: Generates `.app` bundles with a single, correctly shell-escaped launch command — no double-escaping.
-- **Incremental updates**: Only regenerates bundles when the ROM, emulator, arguments, or artwork change. ROM hashes are cached by mtime/size so multi-GB ISOs aren't re-hashed every scan.
+- **Game properties editor**: Edit the display name, platform, emulator, launch file, and advanced command template in a focused inspector. Changes are saved automatically, including title edits as you type.
+- **Artwork from SteamGridDB**: Browse and choose from multiple icon results, with grid artwork as a fallback for obscure titles. Downloaded artwork is cached on disk and reused across re-scans.
+- **Live generation plan**: Every selected game is labelled **New**, **Update**, **Up to date**, or **Needs Attention** before generation. The footer reports the exact number of apps that will be created or updated.
+- **Native app bundles**: Generates `.app` bundles with a single, correctly shell-escaped launch command - no double-escaping.
+- **Incremental updates**: Only regenerates bundles when the title, ROM, emulator, arguments, output location, or artwork change. ROM hashes are cached by mtime/size so multi-GB ISOs aren't re-hashed every scan.
 - **Steam VDF import**: Bridges a legacy `shortcuts.vdf` into the same pipeline.
 - **Direct distribution**: Shells out to emulators, `sips`, and `iconutil`; not sandboxed and not shipped via the Mac App Store.
 
 ## Building & Testing
 
-- **Build system:** SwiftPM is canonical. `Package.swift` builds the whole app (`@main` included) and links Sparkle. For a GUI dev loop, open `SteamShortcutConverter/Package.swift` directly in Xcode and press ⌘R — no `.xcodeproj` needed. (The legacy `SteamShortcutConverter.xcodeproj` is untracked and no longer required.)
+- **Build system:** SwiftPM is canonical. `Package.swift` builds the whole app (`@main` included) and links Sparkle. For a GUI dev loop, open `SteamShortcutConverter/Package.swift` directly in Xcode and press ⌘R - no `.xcodeproj` needed. (The legacy `SteamShortcutConverter.xcodeproj` is untracked and no longer required.)
 - **Headless tests (canonical):** `cd SteamShortcutConverter && swift test`. Runs the logic suite without launching the GUI.
-- **Release build:** `./make-dmg.sh v0.1.0` assembles `Rom Shortcut Maker.app` and a DMG locally — the same steps CI runs on a tag push.
+- **Release build:** `./make-dmg.sh v0.1.0` assembles `Rom Shortcut Maker.app` and a DMG locally - the same steps CI runs on a tag push.
 - **Minimum OS:** macOS 13.
 
 ## Quick Start
 
-1. **Scan** tab: choose a ROM directory and click **Scan** (or switch the source selector to import a Steam `shortcuts.vdf`).
-2. Review the game list: fix any titles, resolve ambiguous platforms, and pick emulators (each row lists every installed option).
-3. **Settings** tab: paste a SteamGridDB API key and set default emulators per platform.
-4. **Artwork** tab: click **Fetch Missing** to download icons.
-5. **Generate** tab: choose an output directory and click **Generate Bundles**.
-6. **Play**: your games are now native macOS apps — launch them from Finder, Spotlight, or Launchpad.
+1. Choose your **ROM Folder**. Scanning begins immediately; you can also drag a folder onto the window or use **Import from Steam…** for a `shortcuts.vdf` file.
+2. Review the library table. Use search and the **Included**, **Changed**, and **Needs Attention** filters to focus the list. Clear a row's checkbox to exclude it from generation.
+3. Double-click a game or click its info button to open **Game Properties**. Title changes save as you type; platform and emulator choices update the generation plan immediately.
+4. In Game Properties, click **Change Artwork…** to search SteamGridDB and choose a specific icon or grid. Add your SteamGridDB API key in **Rom Shortcut Maker > Settings** if needed.
+5. Choose the **Output** folder. The footer shows exactly how many apps are new, updated, current, or need attention.
+6. Click **Generate _N_ Changes**. When everything is current, the action changes to **Rebuild Selected** for an explicit forced rebuild.
+7. Launch the generated apps from Finder, Spotlight, the Dock, or Launchpad.
 
 ## Emulator / System Database
 
-The curated knowledge base of platforms, folder aliases, ROM extensions, standalone emulators, and RetroArch cores lives in `SteamShortcutConverter/SteamShortcutConverter/Resources/emulators.json`. It is data, not code — add platforms/emulators/cores by editing the JSON (the test suite validates that every referenced emulator maps to a real `EmulatorType`).
+The curated knowledge base of platforms, folder aliases, ROM extensions, standalone emulators, and RetroArch cores lives in `SteamShortcutConverter/SteamShortcutConverter/Resources/emulators.json`. It is data, not code - add platforms/emulators/cores by editing the JSON (the test suite validates that every referenced emulator maps to a real `EmulatorType`).
 
 ## Troubleshooting
 
 - **App won't open** ("damaged"): `xattr -cr "/path/to/Rom Shortcut Maker.app"`
 - **No emulator for a game**: install the emulator (or configure its path in Settings); the row shows "No emulator" until one is available.
-- **No artwork**: set a SteamGridDB API key in Settings; retro titles fall back from icons to grids.
+- **Needs Attention status**: open Game Properties and assign a recognized platform and an installed emulator before generating.
+- **No artwork results**: set a SteamGridDB API key in Settings, then adjust the artwork search title if the detected game name is too specific. Retro titles can use grid results when no icon is available.
 
 ## Development
 
