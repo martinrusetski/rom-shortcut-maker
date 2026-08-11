@@ -600,6 +600,15 @@ class DefaultAppBundleGenerator: AppBundleGenerator {
         return trimmed.isEmpty ? "game" : trimmed
     }
 
+    /// Sanitize a display title into the Finder-visible `.app` bundle name.
+    /// This is shared with generation planning so the preview compares the
+    /// exact destination that the generator will write.
+    static func sanitizedBundleName(_ title: String) -> String {
+        let invalid = CharacterSet(charactersIn: ":/\\")
+        let cleaned = title.components(separatedBy: invalid).joined(separator: "-")
+        return cleaned.isEmpty ? "Game" : cleaned
+    }
+
     /// Assign unique bundle identifiers for a batch of (title, stableKey) items.
     /// Titles that sanitize to the same base get a short stableKey suffix.
     static func bundleIdentifiers(for items: [(title: String, stableKey: String)]) -> [String] {

@@ -14,16 +14,17 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @ObservedObject var viewModel: MainViewModel
     @State private var isDropTargeted = false
+    @State private var generationPlan = MainViewModel.GenerationPlan()
 
     var body: some View {
         VStack(spacing: 0) {
             SourceBar(viewModel: viewModel)
             Divider()
-            GameListZone(viewModel: viewModel)
+            GameListZone(viewModel: viewModel, generationPlan: generationPlan)
             Divider()
-            GenerateBar(viewModel: viewModel)
+            GenerateBar(viewModel: viewModel, generationPlan: generationPlan)
         }
-        .frame(minWidth: 640, minHeight: 480)
+        .frame(minWidth: 760, minHeight: 480)
         .overlay {
             if isDropTargeted {
                 RoundedRectangle(cornerRadius: 8)
@@ -36,6 +37,9 @@ struct ContentView: View {
             handleFolderDrop(providers)
         }
         .task { await viewModel.load() }
+        .task(id: viewModel.generationSignature) {
+            generationPlan = await viewModel.generationPlan()
+        }
         .onChange(of: viewModel.propertiesGameID) { id in
             if id != nil { PropertiesWindowController.shared.show(viewModel: viewModel) }
         }
@@ -118,60 +122,150 @@ private struct SourceBar: View {
 
 private struct GameListZone: View {
     @ObservedObject var viewModel: MainViewModel
+    let generationPlan: MainViewModel.GenerationPlan
+
+    @State private var search = ""
+    @State private var filter: GameFilter = .all
+
+    private enum GameFilter: String, CaseIterable, Identifiable {
+        case all = "All"
+        case included = "Included"
+        case changed = "Changed"
+        case attention = "Needs Attention"
+
+        var id: Self { self }
+    }
+
+    private var filteredGames: [GameEntry] {
+        viewModel.games.filter { game in
+            let matchesSearch = search.isEmpty
+                || game.title.localizedCaseInsensitiveContains(search)
+                || game.platform.displayName.localizedCaseInsensitiveContains(search)
+                || (game.emulator?.shortDisplayName.localizedCaseInsensitiveContains(search) ?? false)
+            guard matchesSearch else { return false }
+            switch filter {
+            case .all: return true
+            case .included: return game.isSelected
+            case .changed:
+                let action = generationPlan.action(for: game)
+                return action == .create || action == .update
+            case .attention: return generationPlan.action(for: game) == .needsAttention
+            }
+        }
+        .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+    }
 
     var body: some View {
-        if viewModel.games.isEmpty {
+        if viewModel.games.isEmpty && viewModel.operation == .scanning {
+            VStack(spacing: 12) {
+                ProgressView()
+                Text("Scanning ROM folder…")
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if viewModel.games.isEmpty {
             EmptyStateView(viewModel: viewModel)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            List(selection: $viewModel.selection) {
-                ForEach(viewModel.groupedGames, id: \.platform.id) { group in
-                    let isUnknown = group.platform.id == "unknown"
-                    Section {
-                        if isUnknown || !viewModel.isCollapsed(group.platform.id) {
-                            ForEach(group.games) { game in
-                                GameListRow(
-                                    game: game,
-                                    onToggleInclude: { viewModel.setSelected($0, for: game) },
-                                    onInfo: { viewModel.propertiesGameID = game.id }
-                                )
-                                    .tag(game.id)
-                                    .contentShape(Rectangle())
-                                    .onTapGesture(count: 2) { viewModel.propertiesGameID = game.id }
-                                    .contextMenu { rowMenu(for: game) }
-                            }
+            VStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    TextField("Search games", text: $search)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 280)
+                    Picker("Show", selection: $filter) {
+                        ForEach(GameFilter.allCases) { filter in
+                            Text(filter.rawValue).tag(filter)
                         }
-                    } header: {
-                        PlatformSectionHeader(
-                            platform: group.platform,
-                            count: group.games.count,
-                            isCollapsed: viewModel.isCollapsed(group.platform.id),
-                            isUnknown: isUnknown,
-                            toggle: { viewModel.toggleCollapsed(group.platform.id) }
-                        )
                     }
+                    .frame(width: 170)
+                    Spacer()
+                    Text("\(filteredGames.count) of \(viewModel.games.count)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+
+                Divider()
+
+                Table(filteredGames, selection: $viewModel.selection) {
+                    TableColumn("") { game in
+                        Toggle("", isOn: Binding(
+                            get: { game.isSelected },
+                            set: { viewModel.setSelected($0, for: game) }
+                        ))
+                        .labelsHidden()
+                        .help("Include in generation")
+                        .accessibilityLabel("Include \(game.title) in generation")
+                    }
+                    .width(28)
+
+                    TableColumn("Game") { game in
+                        GameTitleCell(game: game)
+                    }
+                    .width(min: 180, ideal: 230, max: 320)
+
+                    TableColumn("Platform") { game in
+                        Text(game.platform.displayName)
+                            .foregroundColor(game.platform.id == "unknown" ? .orange : .primary)
+                            .lineLimit(1)
+                    }
+                    .width(min: 70, ideal: 80, max: 110)
+
+                    TableColumn("Emulator") { game in
+                        Text(game.emulator?.shortDisplayName ?? "—")
+                            .foregroundColor(game.emulator == nil ? .orange : .secondary)
+                            .lineLimit(1)
+                    }
+                    .width(min: 90, ideal: 110, max: 145)
+
+                    TableColumn("File") { game in
+                        GameFileCell(game: game)
+                    }
+                    .width(min: 65, ideal: 75, max: 100)
+
+                    TableColumn("Status") { game in
+                        GenerationStatusCell(game: game, action: generationPlan.action(for: game))
+                    }
+                    .width(min: 95, ideal: 110, max: 135)
+
+                    TableColumn("") { game in
+                        Button {
+                            viewModel.propertiesGameID = game.id
+                        } label: {
+                            Image(systemName: "info.circle")
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundColor(.secondary)
+                        .help("Game Properties")
+                    }
+                    .width(28)
+                }
+                .contextMenu(forSelectionType: GameEntry.ID.self) { ids in
+                    selectionMenu(for: ids)
+                } primaryAction: { ids in
+                    if let id = ids.first { viewModel.propertiesGameID = id }
+                }
+                .onDeleteCommand { excludeSelection() }
             }
-            .onDeleteCommand { excludeSelection() }
         }
     }
 
     /// Games a context-menu action applies to: the whole selection when the
     /// clicked row is part of it, otherwise just that row.
-    private func targets(for game: GameEntry) -> [GameEntry] {
-        if viewModel.selection.contains(game.id) {
-            return viewModel.games.filter { viewModel.selection.contains($0.id) }
-        }
-        return [game]
+    private func targets(for ids: Set<GameEntry.ID>) -> [GameEntry] {
+        viewModel.games.filter { ids.contains($0.id) }
     }
 
     @ViewBuilder
-    private func rowMenu(for game: GameEntry) -> some View {
-        let targets = targets(for: game)
+    private func selectionMenu(for ids: Set<GameEntry.ID>) -> some View {
+        let targets = targets(for: ids)
+        let game = targets.first
         let allIncluded = targets.allSatisfy { $0.isSelected }
 
-        Button("Properties") { viewModel.propertiesGameID = game.id }
+        Button("Properties") { if let game { viewModel.propertiesGameID = game.id } }
             .keyboardShortcut("i", modifiers: .command)
+            .disabled(targets.count != 1)
         Button("Fetch Artwork") {
             Task { for t in targets { await viewModel.fetchArtwork(for: t) } }
         }
@@ -189,14 +283,16 @@ private struct GameListZone: View {
         Menu("Set Folder Platform Rule") {
             ForEach(viewModel.allPlatforms) { platform in
                 Button(platform.displayName) {
-                    viewModel.setFolderPlatformRule(platform, for: game)
+                    if let game { viewModel.setFolderPlatformRule(platform, for: game) }
                 }
             }
         }
+        .disabled(game == nil)
         Divider()
         Button("Reveal in Finder") {
-            NSWorkspace.shared.activateFileViewerSelecting([game.romPath])
+            if let game { NSWorkspace.shared.activateFileViewerSelecting([game.romPath]) }
         }
+        .disabled(game == nil)
         Button("Reset Overrides") {
             for t in targets { viewModel.resetOverrides(for: t) }
         }
@@ -213,75 +309,94 @@ private struct GameListZone: View {
 
 private struct GenerateBar: View {
     @ObservedObject var viewModel: MainViewModel
-    @State private var preview: MainViewModel.GenerationPreview?
+    let generationPlan: MainViewModel.GenerationPlan
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 8) {
             HStack(spacing: 8) {
                 Text("Output:")
                     .foregroundColor(.secondary)
                 PathField(path: viewModel.outputDirectory, placeholder: "No output folder chosen")
                 Button("Choose…") {
                     if let url = FilePicker.chooseDirectory(title: "Select Output Folder") {
-                        viewModel.outputDirectory = url.path
+                        viewModel.setOutputDirectory(url)
                     }
                 }
-                if let previewText { Text(previewText).font(.caption).foregroundColor(.secondary) }
-                Button("Generate") { Task { await viewModel.generate() } }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!viewModel.canGenerate || viewModel.isProcessing)
-                    .help(viewModel.canGenerate ? "" : "Choose an output folder and select at least one game with an emulator.")
             }
-            statusLine
+            HStack(spacing: 8) {
+                generationSummary
+                    .font(.caption)
+                Spacer()
+                if generationPlan.isUpToDate {
+                    Button("Rebuild Selected") { Task { await viewModel.generate(forceRebuild: true) } }
+                        .disabled(!viewModel.canGenerate || viewModel.isProcessing)
+                } else {
+                    Button(generateButtonTitle) { Task { await viewModel.generate() } }
+                        .buttonStyle(.borderedProminent)
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(!viewModel.canGenerate || viewModel.isProcessing || generationPlan.pendingCount == 0)
+                }
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .task(id: viewModel.generationSignature) {
-            guard !viewModel.games.isEmpty else { preview = nil; return }
-            preview = await viewModel.previewChanges()
-        }
     }
 
-    /// "will create 3, update 2, skip 137" — the trust signal that automation is
-    /// doing the right thing, without a confirmation sheet.
-    private var previewText: String? {
-        guard !viewModel.isProcessing, let preview, !viewModel.games.isEmpty else { return nil }
-        var parts: [String] = []
-        if preview.created > 0 { parts.append("create \(preview.created)") }
-        if preview.updated > 0 { parts.append("update \(preview.updated)") }
-        if preview.unchanged > 0 { parts.append("skip \(preview.unchanged)") }
-        if preview.removed > 0 { parts.append("remove \(preview.removed)") }
-        guard !parts.isEmpty else { return nil }
-        return "will " + parts.joined(separator: ", ")
+    private var generateButtonTitle: String {
+        if generationPlan.pendingCount == 0 {
+            return generationPlan.needsAttention > 0 ? "Resolve Issues" : "Generate"
+        }
+        return generationPlan.pendingCount == 1
+            ? "Generate 1 Change"
+            : "Generate \(generationPlan.pendingCount) Changes"
     }
 
     @ViewBuilder
-    private var statusLine: some View {
-        HStack {
-            if viewModel.isProcessing && !viewModel.progressMessage.isEmpty {
-                Text("Generating \(viewModel.progressMessage)…")
-            } else {
-                Text(statusText)
-            }
-            Spacer()
+    private var generationSummary: some View {
+        if viewModel.isProcessing {
+            operationStatus
+        } else if generationPlan.isUpToDate {
+            Label(upToDateSummary, systemImage: "checkmark.circle.fill")
+                .foregroundColor(.green)
+        } else {
+            Text(planSummaryText)
+                .foregroundColor(.secondary)
         }
-        .font(.caption)
-        .foregroundColor(.secondary)
     }
 
-    private var statusText: String {
-        guard !viewModel.games.isEmpty else { return " " }
-        var parts = ["\(viewModel.games.count) games"]
-        let attention = viewModel.needsAttentionCount
-        if attention > 0 { parts.append("\(attention) need attention") }
-        if let summary = viewModel.conversionSummary, viewModel.showingSummary || !summary.hasIssues {
-            parts.append("created \(summary.bundlesCreated), updated \(summary.bundlesUpdated)")
+    private var upToDateSummary: String {
+        let base = "All \(generationPlan.selectedCount) selected apps are up to date"
+        guard generationPlan.excluded > 0 else { return base }
+        return base + " · \(generationPlan.excluded) excluded"
+    }
+
+    private var planSummaryText: String {
+        var parts: [String] = []
+        if generationPlan.created > 0 { parts.append("\(generationPlan.created) new") }
+        if generationPlan.updated > 0 {
+            parts.append("\(generationPlan.updated) " + (generationPlan.updated == 1 ? "update" : "updates"))
         }
-        if let date = viewModel.lastConversionDate {
-            parts.append("last generated \(date.formatted(date: .omitted, time: .shortened))")
+        if generationPlan.upToDate > 0 { parts.append("\(generationPlan.upToDate) up to date") }
+        if generationPlan.needsAttention > 0 { parts.append("\(generationPlan.needsAttention) need attention") }
+        if generationPlan.excluded > 0 { parts.append("\(generationPlan.excluded) excluded") }
+        if generationPlan.removed > 0 {
+            parts.append("\(generationPlan.removed) " + (generationPlan.removed == 1 ? "removal" : "removals"))
         }
-        return parts.joined(separator: " · ")
+        return parts.isEmpty ? "No games selected" : parts.joined(separator: " · ")
+    }
+
+    @ViewBuilder
+    private var operationStatus: some View {
+        switch viewModel.operation {
+        case .scanning:
+            Label("Scanning ROM folder…", systemImage: "magnifyingglass")
+        case .importing:
+            Label("Importing from Steam…", systemImage: "square.and.arrow.down")
+        case .generating:
+            Label("Generating \(viewModel.progressMessage)…", systemImage: "gearshape.2")
+        case .idle:
+            Text(planSummaryText)
+        }
     }
 }
 
@@ -399,7 +514,7 @@ enum FilePicker {
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
         panel.allowsMultipleSelection = false
-        panel.allowedFileTypes = extensions
+        panel.allowedContentTypes = extensions.compactMap { UTType(filenameExtension: $0) }
         return panel.runModal() == .OK ? panel.url : nil
     }
 }

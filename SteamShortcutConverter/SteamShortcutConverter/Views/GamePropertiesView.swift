@@ -2,10 +2,8 @@
 //  GamePropertiesView.swift
 //  SteamShortcutConverter
 //
-//  The per-game "Get Info" surface: a resizable utility window (reused, one at a
-//  time) hosting a grouped Form. All per-game editing lives here so the main
-//  list stays clutter-free. Edits apply immediately (no OK/Cancel) — the main
-//  list updates behind the window.
+//  A focused Get Info-style editor. Common changes stay visible; diagnostics
+//  and command-template editing live under Advanced.
 //
 
 import SwiftUI
@@ -14,9 +12,6 @@ import UniformTypeIdentifiers
 
 // MARK: - Reusable utility window
 
-/// Owns the single Game Properties window. A plain AppKit `NSWindow` (rather
-/// than a SwiftUI `Window` scene) so it only appears when opened — no empty
-/// window restored at launch — and is reused across games.
 @MainActor
 final class PropertiesWindowController {
     static let shared = PropertiesWindowController()
@@ -29,7 +24,8 @@ final class PropertiesWindowController {
             let hosting = NSHostingController(rootView: GamePropertiesView(viewModel: viewModel))
             let win = NSWindow(contentViewController: hosting)
             win.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-            win.setContentSize(NSSize(width: 460, height: 640))
+            win.setContentSize(NSSize(width: 560, height: 650))
+            win.minSize = NSSize(width: 520, height: 520)
             win.isReleasedWhenClosed = false
             win.center()
             let delegate = WindowDelegate { [weak viewModel] in
@@ -40,9 +36,13 @@ final class PropertiesWindowController {
             self.window = win
         }
         if let game = viewModel.propertiesGameID.flatMap({ viewModel.game(id: $0) }) {
-            window?.title = game.title
+            updateTitle(game.title)
         }
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    func updateTitle(_ title: String) {
+        window?.title = title.isEmpty ? "Game Properties" : title
     }
 
     private final class WindowDelegate: NSObject, NSWindowDelegate {
@@ -63,181 +63,171 @@ struct GamePropertiesView: View {
 
     var body: some View {
         if let game {
-            content(for: game)
+            VStack(spacing: 0) {
+                PropertiesHeader(viewModel: viewModel, game: game)
+                    .padding(16)
+                Divider()
+                Form {
+                    GameSettingsSection(viewModel: viewModel, game: game)
+                    LaunchSection(viewModel: viewModel, game: game)
+                    AdvancedSection(viewModel: viewModel, game: game)
+                }
+                .formStyle(.grouped)
+                Divider()
+                HStack {
+                    Text("Changes are saved automatically")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Button("Reset Changes") { viewModel.resetOverrides(for: game) }
+                        .disabled(!viewModel.anyOverrides(game))
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+            }
+            .frame(minWidth: 520, minHeight: 520)
         } else {
-            VStack {
+            VStack(spacing: 8) {
                 Image(systemName: "gamecontroller")
-                    .font(.largeTitle).foregroundColor(.secondary)
+                    .font(.largeTitle)
+                    .foregroundColor(.secondary)
                 Text("No game selected").foregroundColor(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
-
-    private func content(for game: GameEntry) -> some View {
-        VStack(spacing: 0) {
-            PropertiesHeader(viewModel: viewModel, game: game)
-                .padding()
-            Divider()
-            Form {
-                ArtworkSection(viewModel: viewModel, game: game)
-                PlatformEmulatorSection(viewModel: viewModel, game: game)
-                if let detection = viewModel.detectionInfo(for: game) {
-                    DetectionSection(info: detection)
-                }
-                LaunchSection(viewModel: viewModel, game: game)
-                Section {
-                    Button("Reset All Overrides") {
-                        viewModel.resetOverrides(for: game)
-                    }
-                    .disabled(!viewModel.anyOverrides(game))
-                }
-            }
-            .formStyle(.grouped)
-        }
-        .frame(minWidth: 420, minHeight: 520)
-    }
 }
 
-// MARK: - Override dot
-
-/// A small filled dot shown next to a field that has a per-game override.
-private struct OverrideDot: View {
-    let isOn: Bool
-    var body: some View {
-        Circle()
-            .fill(isOn ? Color.accentColor : Color.clear)
-            .frame(width: 6, height: 6)
-            .help(isOn ? "Overridden for this game" : "")
-            .accessibilityHidden(!isOn)
-            .accessibilityLabel("Overridden for this game")
-    }
-}
-
-/// A small ↩︎ reset button, shown only when the field is overridden.
-private struct ResetButton: View {
-    let isOn: Bool
+private struct RevertButton: View {
+    let isVisible: Bool
     let action: () -> Void
+
     var body: some View {
-        Button(action: action) {
-            Image(systemName: "arrow.uturn.backward")
+        if isVisible {
+            Button("Revert", action: action)
+                .controlSize(.small)
+                .buttonStyle(.borderless)
+                .foregroundColor(.accentColor)
+                .help("Restore the detected default")
         }
-        .buttonStyle(.borderless)
-        .controlSize(.small)
-        .help("Reset to default")
-        .accessibilityLabel("Reset to default")
-        .disabled(!isOn)
-        .opacity(isOn ? 1 : 0)
     }
 }
 
-// MARK: - Header
+// MARK: - Header and artwork
 
 private struct PropertiesHeader: View {
     @ObservedObject var viewModel: MainViewModel
     let game: GameEntry
 
-    @State private var titleText: String = ""
+    @State private var titleText = ""
+    @State private var showingArtworkPicker = false
+    @State private var titleSaveTask: Task<Void, Never>?
+    @FocusState private var titleIsFocused: Bool
 
     var body: some View {
-        HStack(spacing: 14) {
-            ThumbnailView(url: artworkURL, size: 96)
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    TextField("Title", text: $titleText)
+        HStack(alignment: .top, spacing: 16) {
+            ThumbnailView(url: artworkURL, size: 104)
+                .overlay(alignment: .bottomTrailing) {
+                    Image(systemName: "photo.badge.plus")
+                        .padding(5)
+                        .background(.regularMaterial, in: Circle())
+                        .padding(5)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { showingArtworkPicker = true }
+                .onDrop(of: [.image, .fileURL], isTargeted: nil, perform: handleImageDrop)
+                .help("Click or drop an image to change artwork")
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    TextField("Game title", text: $titleText)
                         .textFieldStyle(.roundedBorder)
                         .font(.title3)
-                        .onSubmit { viewModel.setTitle(titleText, for: game) }
-                    OverrideDot(isOn: viewModel.hasOverride(.title, for: game))
-                    ResetButton(isOn: viewModel.hasOverride(.title, for: game)) {
+                        .focused($titleIsFocused)
+                        .onSubmit { commitTitle() }
+                    RevertButton(isVisible: viewModel.hasOverride(.title, for: game)) {
                         viewModel.resetOverride(.title, for: game)
                     }
                 }
+
                 Text("\(game.platform.displayName) · \(game.romPath.lastPathComponent)")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-            }
-        }
-        .task(id: game.id) { titleText = game.title }
-        .onChange(of: game.title) { titleText = $0 }
-    }
 
-    private var artworkURL: URL? {
-        if case .cached(let url) = game.artworkStatus { return url }
-        return nil
-    }
-}
+                if let matchedName = viewModel.matchedGameName(for: game) {
+                    Text("SteamGridDB: \(matchedName)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
 
-// MARK: - Artwork section
-
-private struct ArtworkSection: View {
-    @ObservedObject var viewModel: MainViewModel
-    let game: GameEntry
-
-    @State private var showingMatchSheet = false
-
-    var body: some View {
-        Section("Artwork") {
-            HStack(spacing: 12) {
-                ThumbnailView(url: artworkURL, size: 64)
-                    .onDrop(of: [.image, .fileURL], isTargeted: nil) { providers in
-                        handleImageDrop(providers)
-                    }
-                    .help("Drop an image here to use as artwork")
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Button("Fetch from SteamGridDB") {
+                HStack(spacing: 6) {
+                    Button("Change Artwork…") { showingArtworkPicker = true }
+                    Menu {
+                        Button("Use Best SteamGridDB Result") {
                             Task { await viewModel.fetchArtwork(for: game) }
                         }
-                        .disabled(isDownloading)
-                        if isDownloading { ProgressView().controlSize(.small) }
-                    }
-                    HStack {
-                        Button("Choose File…") { chooseFile() }
-                        Button("Remove") { viewModel.removeArtwork(for: game) }
-                            .disabled(!viewModel.hasArtwork(game))
-                    }
-                    Button("Match Manually…") { showingMatchSheet = true }
                         .disabled(!viewModel.canFetchArtwork)
-                        .help(viewModel.canFetchArtwork
-                              ? "Search SteamGridDB and pick the correct game"
-                              : "Set a SteamGridDB API key in Settings first")
-                    if let matchedName = viewModel.matchedGameName(for: game) {
-                        HStack(spacing: 4) {
-                            Text("Matched: \(matchedName)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Button {
+                        Button("Choose Local File…") { chooseLocalArtwork() }
+                        Divider()
+                        if viewModel.matchedGameName(for: game) != nil {
+                            Button("Clear SteamGridDB Match") {
                                 viewModel.clearManualMatch(for: game)
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
                             }
-                            .buttonStyle(.borderless)
-                            .controlSize(.small)
-                            .foregroundColor(.secondary)
-                            .help("Clear match")
-                            .accessibilityLabel("Clear SteamGridDB match")
                         }
+                        Button("Remove Artwork", role: .destructive) {
+                            viewModel.removeArtwork(for: game)
+                        }
+                        .disabled(!viewModel.hasArtwork(game))
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
                     }
-                    if case .failed(let message) = game.artworkStatus {
-                        Text(message).font(.caption).foregroundColor(.orange)
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    if case .downloading = game.artworkStatus {
+                        ProgressView().controlSize(.small)
                     }
                 }
-                Spacer()
+
+                if case .failed(let message) = game.artworkStatus {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                        .lineLimit(2)
+                }
             }
         }
-        .sheet(isPresented: $showingMatchSheet) {
-            SGDBMatchSheet(viewModel: viewModel, game: game)
+        .task(id: game.id) {
+            titleText = game.title
+            PropertiesWindowController.shared.updateTitle(game.title)
         }
-    }
-
-    private var isDownloading: Bool {
-        if case .downloading = game.artworkStatus { return true }
-        return false
+        .onChange(of: titleText) { newValue in
+            guard newValue != game.title else { return }
+            viewModel.setTitleDraft(newValue, for: game)
+            PropertiesWindowController.shared.updateTitle(newValue)
+            titleSaveTask?.cancel()
+            titleSaveTask = Task {
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                guard !Task.isCancelled else { return }
+                viewModel.saveTitleDraft()
+            }
+        }
+        .onChange(of: game.title) { newValue in
+            if newValue != titleText { titleText = newValue }
+            PropertiesWindowController.shared.updateTitle(newValue)
+        }
+        .onChange(of: titleIsFocused) { focused in
+            if !focused { commitTitle() }
+        }
+        .onDisappear {
+            titleSaveTask?.cancel()
+            commitTitle()
+        }
+        .sheet(isPresented: $showingArtworkPicker) {
+            ArtworkPickerSheet(viewModel: viewModel, game: game)
+        }
     }
 
     private var artworkURL: URL? {
@@ -245,13 +235,19 @@ private struct ArtworkSection: View {
         return nil
     }
 
-    private func chooseFile() {
-        if let url = FilePicker.chooseFile(title: "Choose Artwork", extensions: ["png", "jpg", "jpeg"]) {
-            viewModel.setCustomArtwork(url: url, for: game)
-        }
+    private func commitTitle() {
+        titleSaveTask?.cancel()
+        viewModel.setTitle(titleText, for: game)
     }
 
-    /// Accept an image file dropped on the artwork well.
+    private func chooseLocalArtwork() {
+        guard let url = FilePicker.chooseFile(
+            title: "Choose Artwork",
+            extensions: ["png", "jpg", "jpeg", "webp"]
+        ) else { return }
+        viewModel.setCustomArtwork(url: url, for: game)
+    }
+
     private func handleImageDrop(_ providers: [NSItemProvider]) -> Bool {
         guard let provider = providers.first else { return false }
         provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
@@ -268,14 +264,14 @@ private struct ArtworkSection: View {
     }
 }
 
-// MARK: - Platform & Emulator section
+// MARK: - Common settings
 
-private struct PlatformEmulatorSection: View {
+private struct GameSettingsSection: View {
     @ObservedObject var viewModel: MainViewModel
     let game: GameEntry
 
     var body: some View {
-        Section("Platform & Emulator") {
+        Section("Game") {
             HStack {
                 Picker("Platform", selection: Binding(
                     get: { game.platform },
@@ -285,20 +281,21 @@ private struct PlatformEmulatorSection: View {
                         Text(platform.displayName).tag(platform)
                     }
                 }
-                OverrideDot(isOn: viewModel.hasOverride(.platform, for: game))
-                ResetButton(isOn: viewModel.hasOverride(.platform, for: game)) {
+                RevertButton(isVisible: viewModel.hasOverride(.platform, for: game)) {
                     viewModel.resetOverride(.platform, for: game)
                 }
             }
 
             let options = viewModel.availableOptions(for: game)
             if options.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    let message = game.platform.id == "unknown"
-                        ? "Assign a platform before choosing an emulator"
-                        : "No compatible emulator installed for .\(game.launchPath.pathExtension.lowercased())"
-                    Label(message, systemImage: "exclamationmark.triangle")
+                HStack {
+                    Label(
+                        game.platform.id == "unknown"
+                            ? "Assign a platform before choosing an emulator"
+                            : "No compatible emulator installed",
+                        systemImage: "exclamationmark.triangle.fill")
                         .foregroundColor(.orange)
+                    Spacer()
                     Button("Open Settings…") { openSettingsWindow() }
                 }
             } else {
@@ -311,8 +308,7 @@ private struct PlatformEmulatorSection: View {
                             Text(label(for: option)).tag(Optional(option.choice))
                         }
                     }
-                    OverrideDot(isOn: viewModel.hasOverride(.emulator, for: game))
-                    ResetButton(isOn: viewModel.hasOverride(.emulator, for: game)) {
+                    RevertButton(isVisible: viewModel.hasOverride(.emulator, for: game)) {
                         viewModel.resetOverride(.emulator, for: game)
                     }
                 }
@@ -322,82 +318,59 @@ private struct PlatformEmulatorSection: View {
 
     private func label(for option: EmulatorOption) -> String {
         let isDefault = viewModel.defaultChoiceSetting(for: game.platform) == option.choice
-        return isDefault ? "\(option.displayName) (platform default)" : option.displayName
+        return isDefault ? "\(option.displayName) - platform default" : option.displayName
     }
 
-    /// Open the Settings scene on macOS 13 (the `openSettings` environment value
-    /// is 14+). Ventura renamed the selector to `showSettingsWindow:`.
     private func openSettingsWindow() {
         NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
     }
 }
 
-private struct DetectionSection: View {
-    let info: PlatformDetectionInfo
-
-    var body: some View {
-        Section("Detection") {
-            Text(info.summary)
-                .foregroundColor(info.resolvedBy == nil ? .orange : .secondary)
-
-            ForEach(Array(info.evidence.enumerated()), id: \.offset) { _, evidence in
-                Text(evidence)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            LabeledContent("Source folder") {
-                Text(info.sourceDirectory.path)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .foregroundColor(.secondary)
-            }
-        }
-    }
-}
-
-// MARK: - Launch section
+// MARK: - Launch
 
 private struct LaunchSection: View {
     @ObservedObject var viewModel: MainViewModel
     let game: GameEntry
 
-    @State private var argsText: String = ""
-
     var body: some View {
         Section("Launch") {
-            VStack(alignment: .leading, spacing: 4) {
+            if !game.alternateImages.isEmpty {
                 HStack {
-                    Text("Arguments")
-                    Spacer()
-                    OverrideDot(isOn: viewModel.hasOverride(.args, for: game))
-                    ResetButton(isOn: viewModel.hasOverride(.args, for: game)) {
-                        viewModel.resetOverride(.args, for: game)
+                    Picker("Game file", selection: Binding(
+                        get: { game.launchPath },
+                        set: { viewModel.setLaunchImage($0, for: game) }
+                    )) {
+                        ForEach([game.romPath] + game.alternateImages, id: \.self) { url in
+                            Text(url.lastPathComponent).tag(url)
+                        }
+                    }
+                    RevertButton(isVisible: viewModel.hasOverride(.launchImage, for: game)) {
+                        viewModel.resetOverride(.launchImage, for: game)
                     }
                 }
-                TextField("Arguments", text: $argsText)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(.body, design: .monospaced))
-                    .onSubmit { viewModel.setArgsTemplate(argsText, for: game) }
-                Text("Tokens: \(tokenHelp)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .task(id: game.id) { argsText = game.argsTemplate }
-            .onChange(of: game.argsTemplate) { argsText = $0 }
-
-            launchImageControl
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("ROM Path").font(.caption).foregroundColor(.secondary)
-                HStack {
-                    Text(game.romPath.path)
-                        .font(.caption)
-                        .textSelection(.enabled)
+            } else {
+                LabeledContent("Game file") {
+                    Text(game.launchPath.lastPathComponent)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    Spacer()
-                    Button("Reveal in Finder") {
+                        .textSelection(.enabled)
+                }
+            }
+
+            if game.launchPath.pathExtension.lowercased() == "m3u", let count = game.discCount {
+                LabeledContent("Playlist") {
+                    Text("\(count) discs")
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            LabeledContent("Location") {
+                HStack {
+                    Text(game.romPath.deletingLastPathComponent().path)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .foregroundColor(.secondary)
+                    Button("Reveal") {
                         NSWorkspace.shared.activateFileViewerSelecting([game.romPath])
                     }
                     .controlSize(.small)
@@ -405,69 +378,112 @@ private struct LaunchSection: View {
             }
         }
     }
+}
 
-    /// Authoritative token list expanded by `AppBundleGenerator.buildLaunchCommand`.
-    private var tokenHelp: String {
-        "{emulator} (the emulator binary), {rom} (the ROM/playlist path), {core} (RetroArch core, cores only)"
-    }
+// MARK: - Advanced
 
-    @ViewBuilder
-    private var launchImageControl: some View {
-        if !game.alternateImages.isEmpty {
-            let images = [game.romPath] + game.alternateImages
-            HStack {
-                Picker("Launch File", selection: Binding(
-                    get: { game.launchPath },
-                    set: { viewModel.setLaunchImage($0, for: game) }
-                )) {
-                    ForEach(images, id: \.self) { url in
-                        Text(url.lastPathComponent).tag(url)
+private struct AdvancedSection: View {
+    @ObservedObject var viewModel: MainViewModel
+    let game: GameEntry
+
+    @State private var isExpanded = false
+    @State private var argsText = ""
+
+    var body: some View {
+        Section {
+            DisclosureGroup("Advanced", isExpanded: $isExpanded) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 6) {
+                        Text("Command template")
+                        Image(systemName: "questionmark.circle")
+                            .foregroundColor(.secondary)
+                            .help("Use {emulator} for the executable, {rom} for the game file, and {core} for a RetroArch core.")
+                        Spacer()
+                        RevertButton(isVisible: viewModel.hasOverride(.args, for: game)) {
+                            viewModel.resetOverride(.args, for: game)
+                        }
+                    }
+                    TextField("Command template", text: $argsText)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.body, design: .monospaced))
+                        .onSubmit { viewModel.setArgsTemplate(argsText, for: game) }
+
+                    if let detection = viewModel.detectionInfo(for: game) {
+                        Divider()
+                        DetectionDetails(info: detection)
                     }
                 }
-                OverrideDot(isOn: viewModel.hasOverride(.launchImage, for: game))
-                ResetButton(isOn: viewModel.hasOverride(.launchImage, for: game)) {
-                    viewModel.resetOverride(.launchImage, for: game)
-                }
+                .padding(.top, 6)
             }
-        } else if game.launchPath.pathExtension.lowercased() == "m3u" {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Discs").font(.caption).foregroundColor(.secondary)
-                ForEach(game.additionalFiles, id: \.self) { disc in
-                    Text(disc.lastPathComponent).font(.caption)
+        }
+        .task(id: game.id) { argsText = game.argsTemplate }
+        .onChange(of: game.argsTemplate) { argsText = $0 }
+    }
+}
+
+private struct DetectionDetails: View {
+    let info: PlatformDetectionInfo
+    @State private var isExpanded = false
+
+    var body: some View {
+        DisclosureGroup("Detection details", isExpanded: $isExpanded) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(info.summary)
+                    .foregroundColor(info.resolvedBy == nil ? .orange : .secondary)
+                ForEach(Array(info.evidence.enumerated()), id: \.offset) { _, evidence in
+                    Text(evidence)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
-                Text("Launched via a generated .m3u playlist.")
-                    .font(.caption2).foregroundColor(.secondary)
+                Text(info.sourceDirectory.path)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
             }
+            .padding(.top, 4)
         }
     }
 }
 
-// MARK: - Manual match sheet
+// MARK: - SteamGridDB artwork picker
 
-/// A modal for correcting a wrong SteamGridDB match: search by title, pick the
-/// right game, and (optionally) adopt its name as the game's title. Not a
-/// main-list row, so observing the ViewModel is fine here.
-private struct SGDBMatchSheet: View {
+private struct ArtworkPickerSheet: View {
     @ObservedObject var viewModel: MainViewModel
     let game: GameEntry
 
     @Environment(\.dismiss) private var dismiss
-
-    @State private var searchTerm: String = ""
-    @State private var results: [SGDBGame] = []
-    @State private var selectedID: Int?
+    @State private var searchTerm = ""
+    @State private var matches: [SGDBGame] = []
+    @State private var selectedMatchID: Int?
+    @State private var candidates: [SGDBArtworkCandidate] = []
+    @State private var selectedCandidateID: String?
     @State private var isSearching = false
-    @State private var hasSearched = false
-    @State private var useNameAsTitle = true
+    @State private var isLoadingArtwork = false
+    @State private var useNameAsTitle = false
+    @State private var candidateTask: Task<Void, Never>?
 
     private var selectedMatch: SGDBGame? {
-        results.first { $0.id == selectedID }
+        matches.first { $0.id == selectedMatchID }
+    }
+
+    private var selectedCandidate: SGDBArtworkCandidate? {
+        candidates.first { $0.id == selectedCandidateID }
+    }
+
+    private var iconCandidates: [SGDBArtworkCandidate] {
+        candidates.filter { $0.sourceType == .icon }
+    }
+
+    private var gridCandidates: [SGDBArtworkCandidate] {
+        candidates.filter { $0.sourceType == .grid }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Match “\(game.title)”")
-                .font(.headline)
+            Text("Choose Artwork")
+                .font(.title2.weight(.semibold))
 
             HStack {
                 TextField("Search SteamGridDB", text: $searchTerm)
@@ -477,49 +493,116 @@ private struct SGDBMatchSheet: View {
                     .disabled(searchTerm.trimmingCharacters(in: .whitespaces).isEmpty || isSearching)
             }
 
-            resultsList
+            HStack(alignment: .top, spacing: 12) {
+                GroupBox("Game match") {
+                    if isSearching {
+                        ProgressView("Searching…")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if matches.isEmpty {
+                        Text("No matches")
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        List(matches, id: \.id, selection: $selectedMatchID) { match in
+                            Text(match.name).lineLimit(2)
+                        }
+                    }
+                }
+                .frame(width: 190)
 
-            Toggle("Also use matched name as title", isOn: $useNameAsTitle)
+                GroupBox("Available artwork") {
+                    if isLoadingArtwork {
+                        ProgressView("Loading artwork…")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if candidates.isEmpty {
+                        Text(selectedMatch == nil ? "Choose a game match" : "No artwork found")
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 14) {
+                                candidateSection(title: "Icons", items: iconCandidates)
+                                if !gridCandidates.isEmpty {
+                                    candidateSection(title: "Grid fallback", items: gridCandidates)
+                                }
+                            }
+                            .padding(4)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .frame(height: 350)
+
+            Toggle("Use matched SteamGridDB name as the game title", isOn: $useNameAsTitle)
 
             HStack {
+                Text("Icons are preferred. Grid artwork is shown only as a fallback.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button("Use This Match") { apply() }
+                Button("Use Artwork") { applySelection() }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(selectedMatch == nil)
+                    .disabled(selectedMatch == nil || selectedCandidate == nil)
             }
         }
-        .padding()
-        .frame(width: 420, height: 420)
+        .padding(16)
+        .frame(width: 680, height: 520)
         .task {
             searchTerm = game.title
             search()
         }
+        .onChange(of: selectedMatchID) { _ in loadSelectedMatchArtwork() }
+        .onDisappear { candidateTask?.cancel() }
     }
 
     @ViewBuilder
-    private var resultsList: some View {
-        if isSearching {
-            VStack {
-                Spacer()
-                ProgressView("Searching…")
-                Spacer()
+    private func candidateSection(title: String, items: [SGDBArtworkCandidate]) -> some View {
+        if !items.isEmpty {
+            Text(title)
+                .font(.headline)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 92, maximum: 120), spacing: 10)], spacing: 10) {
+                ForEach(items) { candidate in
+                    Button {
+                        selectedCandidateID = candidate.id
+                    } label: {
+                        ZStack(alignment: .topTrailing) {
+                            AsyncImage(url: candidate.image.thumb ?? candidate.image.url) { phase in
+                                switch phase {
+                                case .success(let image):
+                                    image.resizable().scaledToFit()
+                                case .failure:
+                                    Image(systemName: "photo")
+                                        .font(.largeTitle)
+                                        .foregroundColor(.secondary)
+                                default:
+                                    ProgressView()
+                                }
+                            }
+                            .frame(height: 92)
+                            .frame(maxWidth: .infinity)
+                            .background(Color.secondary.opacity(0.08))
+                            .clipShape(RoundedRectangle(cornerRadius: 7))
+
+                            if selectedCandidateID == candidate.id {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.accentColor)
+                                    .background(Color(nsColor: .windowBackgroundColor), in: Circle())
+                                    .padding(5)
+                            }
+                        }
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 7)
+                                .strokeBorder(
+                                    selectedCandidateID == candidate.id ? Color.accentColor : Color.clear,
+                                    lineWidth: 3)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            .frame(maxWidth: .infinity)
-        } else if results.isEmpty {
-            VStack {
-                Spacer()
-                Text(hasSearched ? "No results" : "Search for a game to match")
-                    .foregroundColor(.secondary)
-                Spacer()
-            }
-            .frame(maxWidth: .infinity)
-        } else {
-            List(results, id: \.id, selection: $selectedID) { result in
-                Text(result.name)
-            }
-            .border(Color.secondary.opacity(0.2))
         }
     }
 
@@ -527,19 +610,44 @@ private struct SGDBMatchSheet: View {
         let term = searchTerm.trimmingCharacters(in: .whitespaces)
         guard !term.isEmpty else { return }
         isSearching = true
+        matches = []
+        candidates = []
+        selectedCandidateID = nil
         Task {
             let found = await viewModel.searchArtworkMatches(term: term)
-            results = found
-            selectedID = found.first?.id
-            hasSearched = true
+            matches = found
+            selectedMatchID = found.first?.id
             isSearching = false
         }
     }
 
-    private func apply() {
-        guard let match = selectedMatch else { return }
+    private func loadSelectedMatchArtwork() {
+        candidateTask?.cancel()
+        guard let match = selectedMatch else {
+            candidates = []
+            selectedCandidateID = nil
+            return
+        }
+        isLoadingArtwork = true
+        candidates = []
+        selectedCandidateID = nil
+        candidateTask = Task {
+            let found = await viewModel.artworkCandidates(for: match)
+            guard !Task.isCancelled, selectedMatchID == match.id else { return }
+            candidates = found
+            selectedCandidateID = found.first?.id
+            isLoadingArtwork = false
+        }
+    }
+
+    private func applySelection() {
+        guard let match = selectedMatch, let candidate = selectedCandidate else { return }
         Task {
-            await viewModel.applyManualMatch(match, setTitle: useNameAsTitle, for: game)
+            await viewModel.applyArtworkCandidate(
+                candidate,
+                match: match,
+                setTitle: useNameAsTitle,
+                for: game)
             dismiss()
         }
     }

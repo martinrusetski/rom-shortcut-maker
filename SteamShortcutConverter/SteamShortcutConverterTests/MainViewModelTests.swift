@@ -37,6 +37,30 @@ final class FakeArtworkProvider: ArtworkProvider {
     func downloadImage(url: URL) async throws -> Data { Data([0x89, 0x50, 0x4E, 0x47]) }
 }
 
+final class MultipleArtworkProvider: ArtworkProvider {
+    private(set) var downloadedURL: URL?
+
+    func searchGame(term: String) async throws -> [SGDBGame] {
+        [SGDBGame(id: 7, name: "Matched Game")]
+    }
+
+    func getIcons(gameId: Int) async throws -> [SGDBImage] {
+        [
+            SGDBImage(id: 1, url: URL(string: "https://x/low.png")!, thumb: nil, score: 1, mime: "image/png"),
+            SGDBImage(id: 2, url: URL(string: "https://x/high.png")!, thumb: nil, score: 9, mime: "image/png")
+        ]
+    }
+
+    func getGrids(gameId: Int) async throws -> [SGDBImage] {
+        [SGDBImage(id: 3, url: URL(string: "https://x/grid.jpg")!, thumb: nil, score: 5, mime: "image/jpeg")]
+    }
+
+    func downloadImage(url: URL) async throws -> Data {
+        downloadedURL = url
+        return Data([0x89, 0x50, 0x4E, 0x47])
+    }
+}
+
 final class FakeGameBundleGenerator: GameBundleGenerating {
     private(set) var generatedCount = 0
     func generateAppBundle(for game: ResolvedGameBundle) async throws -> URL {
@@ -451,49 +475,6 @@ final class MainViewModelTests: XCTestCase {
         XCTAssertFalse(summary.hasIssues)
     }
 
-    // MARK: - Grouping & sorting
-
-    private func rom(platformID: String, display: String, path: String) -> DiscoveredROM {
-        DiscoveredROM(
-            url: URL(fileURLWithPath: path),
-            fileSize: 10,
-            romExtension: ".sfc",
-            platform: Platform(id: platformID, displayName: display),
-            candidateEmulators: [.snes9x],
-            platformAmbiguous: false
-        )
-    }
-
-    func testGroupedGamesSortsPlatformsAndTitles() async {
-        let vm = makeViewModel(roms: [
-            rom(platformID: "snes", display: "SNES", path: "/ROMs/SNES/Super Metroid.sfc"),
-            rom(platformID: "snes", display: "SNES", path: "/ROMs/SNES/Chrono Trigger.sfc"),
-            rom(platformID: "gb", display: "Game Boy", path: "/ROMs/GB/Tetris.gb")
-        ])
-        await vm.scan()
-        let grouped = vm.groupedGames
-        // Platforms alphabetical by display name: "Game Boy" before "SNES".
-        XCTAssertEqual(grouped.map { $0.platform.displayName }, ["Game Boy", "SNES"])
-        // Titles sorted within a group.
-        let snes = grouped.first { $0.platform.id == "snes" }!
-        XCTAssertEqual(snes.games.map { $0.title }, ["Chrono Trigger", "Super Metroid"])
-    }
-
-    func testGroupedGamesPutsUnknownLast() async {
-        // A nil-platform ROM becomes the "unknown" bucket in makeEntry.
-        let unknown = DiscoveredROM(
-            url: URL(fileURLWithPath: "/ROMs/mystery.bin"),
-            fileSize: 10, romExtension: ".bin",
-            platform: nil, candidateEmulators: [], platformAmbiguous: true)
-        let vm = makeViewModel(roms: [
-            rom(platformID: "snes", display: "SNES", path: "/ROMs/SNES/Zelda.sfc"),
-            unknown
-        ])
-        await vm.scan()
-        XCTAssertEqual(vm.groupedGames.count, 2)
-        XCTAssertEqual(vm.groupedGames.last?.platform.id, "unknown")
-    }
-
     // MARK: - GameStatus
 
     func testStatusReadyWhenEmulatorAssigned() async {
@@ -522,28 +503,11 @@ final class MainViewModelTests: XCTestCase {
         XCTAssertEqual(entry.status, .noEmulator)
     }
 
-    // MARK: - Collapsed-state persistence
-
-    func testToggleCollapsedPersists() async {
-        let vm = makeViewModel(roms: [snesROM("/ROMs/SNES/Zelda.sfc")])
-        await vm.scan()
-        vm.toggleCollapsed("snes")
-        XCTAssertTrue(vm.collapsedPlatforms.contains("snes"))
-        XCTAssertTrue(vm.currentConfiguration.collapsedPlatforms.contains("snes"),
-                      "toggling writes the collapsed set into the config that gets persisted")
-        vm.toggleCollapsed("snes")
-        XCTAssertFalse(vm.collapsedPlatforms.contains("snes"))
-        XCTAssertFalse(vm.currentConfiguration.collapsedPlatforms.contains("snes"))
-    }
-
-    /// The custom decoder must default `collapsedPlatforms` to empty when loading
-    /// an on-disk config that predates the field, rather than failing to decode.
-    func testConfigDecodesWithoutCollapsedPlatformsField() throws {
+    func testConfigDecodesMissingNewFields() throws {
         let legacyJSON = """
         {"version":2,"sourceMode":"scan","removeOrphanedBundles":false}
         """.data(using: .utf8)!
         let decoded = try JSONDecoder().decode(AppConfigurationV2.self, from: legacyJSON)
-        XCTAssertEqual(decoded.collapsedPlatforms, [])
         XCTAssertEqual(decoded.folderPlatformRules, [:])
         XCTAssertNil(decoded.hashDatabasePath)
         XCTAssertEqual(decoded.version, 2)
@@ -700,6 +664,25 @@ final class MainViewModelTests: XCTestCase {
         }
     }
 
+    func testArtworkPickerReturnsAllCandidatesAndAppliesExactSelection() async {
+        let provider = MultipleArtworkProvider()
+        let vm = makeViewModel(
+            roms: [snesROM("/ROMs/SNES/Zelda.sfc")],
+            provider: provider)
+        await vm.scan()
+        let game = vm.games[0]
+        let match = SGDBGame(id: 7, name: "Matched Game")
+
+        let candidates = await vm.artworkCandidates(for: match)
+
+        XCTAssertEqual(candidates.map(\.image.id), [2, 1, 3], "icons are score-sorted before grid fallbacks")
+        await vm.applyArtworkCandidate(
+            candidates[1], match: match, setTitle: false, for: game)
+        XCTAssertEqual(provider.downloadedURL, URL(string: "https://x/low.png"))
+        XCTAssertEqual(vm.currentConfiguration.gameOverrides[game.stableKey]?.sgdbGameId, 7)
+        XCTAssertEqual(vm.currentConfiguration.gameOverrides[game.stableKey]?.sgdbGameName, "Matched Game")
+    }
+
     // MARK: - Generation preview
 
     func testPreviewCountsNewGamesAsCreate() async {
@@ -708,10 +691,10 @@ final class MainViewModelTests: XCTestCase {
             snesROM("/ROMs/SNES/Metroid.sfc")
         ])
         await vm.scan()
-        let preview = await vm.previewChanges()
-        XCTAssertEqual(preview.created, 2)
-        XCTAssertEqual(preview.updated, 0)
-        XCTAssertEqual(preview.unchanged, 0)
+        let plan = await vm.generationPlan()
+        XCTAssertEqual(plan.created, 2)
+        XCTAssertEqual(plan.updated, 0)
+        XCTAssertEqual(plan.upToDate, 0)
     }
 
     func testPreviewCountsUnchangedAfterGenerate() async {
@@ -719,9 +702,9 @@ final class MainViewModelTests: XCTestCase {
         await vm.scan()
         vm.outputDirectory = tempDir.path
         await vm.generate()
-        let preview = await vm.previewChanges()
-        XCTAssertEqual(preview.created, 0)
-        XCTAssertEqual(preview.unchanged, 1, "an already-generated, unchanged game is a skip")
+        let plan = await vm.generationPlan()
+        XCTAssertEqual(plan.created, 0)
+        XCTAssertEqual(plan.upToDate, 1, "an already-generated, unchanged game is up to date")
     }
 
     func testPreviewExcludesUnselectedGames() async {
@@ -731,13 +714,39 @@ final class MainViewModelTests: XCTestCase {
         ])
         await vm.scan()
         vm.setSelected(false, for: vm.games[0])
-        let preview = await vm.previewChanges()
-        XCTAssertEqual(preview.created, 1, "only the still-selected game counts")
+        let plan = await vm.generationPlan()
+        XCTAssertEqual(plan.created, 1, "only the still-selected game counts")
+        XCTAssertEqual(plan.excluded, 1)
+    }
+
+    func testPlanUpdatesAfterRename() async {
+        let vm = makeViewModel(roms: [snesROM("/ROMs/SNES/Zelda.sfc")])
+        await vm.scan()
+        vm.outputDirectory = tempDir.path
+        await vm.generate()
+
+        vm.setTitle("The Legend of Zelda", for: vm.games[0])
+        let plan = await vm.generationPlan()
+
+        XCTAssertEqual(plan.updated, 1)
+        XCTAssertEqual(plan.action(for: vm.games[0]), .update)
+    }
+
+    func testPlanUpdatesAfterOutputDirectoryChanges() async {
+        let vm = makeViewModel(roms: [snesROM("/ROMs/SNES/Zelda.sfc")])
+        await vm.scan()
+        vm.outputDirectory = tempDir.path
+        await vm.generate()
+
+        vm.setOutputDirectory(tempDir.appendingPathComponent("Another Output"))
+        let plan = await vm.generationPlan()
+
+        XCTAssertEqual(plan.updated, 1)
     }
 
     // MARK: - Scale
 
-    func testGroupedGamesHandles500Entries() async {
+    func testScanHandles500Entries() async {
         let platforms = [
             ("snes", "SNES"), ("gb", "Game Boy"), ("ps1", "PlayStation"),
             ("n64", "Nintendo 64"), ("genesis", "Genesis")
@@ -755,15 +764,6 @@ final class MainViewModelTests: XCTestCase {
         await vm.scan()
         XCTAssertEqual(vm.games.count, 500)
 
-        let grouped = vm.groupedGames
-        XCTAssertEqual(grouped.count, platforms.count)
-        XCTAssertEqual(grouped.reduce(0) { $0 + $1.games.count }, 500)
-        // Platforms alphabetical by display name.
-        XCTAssertEqual(grouped.map { $0.platform.displayName },
-                       ["Game Boy", "Genesis", "Nintendo 64", "PlayStation", "SNES"])
-        // Titles sorted (natural order) within a group.
-        let first = grouped[0].games.map { $0.title }
-        XCTAssertEqual(first, first.sorted { $0.localizedStandardCompare($1) == .orderedAscending })
     }
 
     // MARK: - Reset all overrides

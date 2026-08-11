@@ -25,6 +25,13 @@ final class MainViewModel: ObservableObject {
         case vdf
     }
 
+    enum Operation: Equatable {
+        case idle
+        case scanning
+        case importing
+        case generating
+    }
+
     // MARK: - Published state
 
     @Published var games: [GameEntry] = []
@@ -35,6 +42,7 @@ final class MainViewModel: ObservableObject {
     @Published var hashDatabasePath: String = ""
     @Published var removeOrphanedBundles: Bool = false
     @Published var isProcessing: Bool = false
+    @Published private(set) var operation: Operation = .idle
     @Published var progressValue: Double = 0.0
     @Published var progressMessage: String = ""
     @Published var conversionSummary: ConversionSummary?
@@ -48,8 +56,6 @@ final class MainViewModel: ObservableObject {
     @Published var selection: Set<GameEntry.ID> = []
     /// The game whose Properties window is open (nil = closed). Reused window.
     @Published var propertiesGameID: GameEntry.ID?
-    /// Platform ids whose list section is collapsed (persisted).
-    @Published var collapsedPlatforms: Set<String> = []
 
     // MARK: - Dependencies
 
@@ -70,6 +76,9 @@ final class MainViewModel: ObservableObject {
     /// Fresh scan evidence, keyed like game overrides. Kept out of persisted
     /// GameEntry state so diagnostics can evolve independently of conversions.
     private var detectionByKey: [String: PlatformDetectionInfo] = [:]
+    /// Ensures the async generation-plan task invalidates even when a mutation
+    /// replaces artwork bytes at the same URL with the same file size.
+    private var generationRevision = 0
 
     /// Pre-override snapshot of each entry, captured right after a scan/import
     /// (default title, resolved platform, default emulator, default args). Used
@@ -157,7 +166,6 @@ final class MainViewModel: ObservableObject {
         hashDatabasePath = config.hashDatabasePath ?? ""
         sourceMode = SourceMode(rawValue: config.sourceMode) ?? .scan
         lastConversionDate = config.lastConversionDate
-        collapsedPlatforms = config.collapsedPlatforms
         detectionByKey = [:]
     }
 
@@ -169,7 +177,6 @@ final class MainViewModel: ObservableObject {
         config.hashDatabasePath = hashDatabasePath.isEmpty ? nil : hashDatabasePath
         config.sourceMode = sourceMode.rawValue
         config.lastConversionDate = lastConversionDate
-        config.collapsedPlatforms = collapsedPlatforms
         let snapshot = config
         Task { try? await configStore.save(snapshot) }
     }
@@ -184,42 +191,12 @@ final class MainViewModel: ObservableObject {
         Set(games.map { $0.platform.id }).count
     }
 
-    // MARK: - List grouping & status
-
-    /// Games grouped by platform for the collapsible list: platforms ordered
-    /// alphabetically by display name with the "unknown" bucket last; games
-    /// sorted by title (natural order) within each group.
-    var groupedGames: [(platform: Platform, games: [GameEntry])] {
-        Dictionary(grouping: games, by: { $0.platform })
-            .map { (platform: $0.key,
-                    games: $0.value.sorted {
-                        $0.title.localizedStandardCompare($1.title) == .orderedAscending
-                    }) }
-            .sorted { lhs, rhs in
-                if lhs.platform.id == "unknown" { return false }
-                if rhs.platform.id == "unknown" { return true }
-                return lhs.platform.displayName
-                    .localizedStandardCompare(rhs.platform.displayName) == .orderedAscending
-            }
-    }
+    // MARK: - List status
 
     /// How many games are not `.ready` (no emulator / unknown platform). Surfaced
     /// in the status line so a problem is noticeable without opening anything.
     var needsAttentionCount: Int {
         games.filter { $0.status != .ready }.count
-    }
-
-    func isCollapsed(_ platformID: String) -> Bool {
-        collapsedPlatforms.contains(platformID)
-    }
-
-    func toggleCollapsed(_ platformID: String) {
-        if collapsedPlatforms.contains(platformID) {
-            collapsedPlatforms.remove(platformID)
-        } else {
-            collapsedPlatforms.insert(platformID)
-        }
-        persist()
     }
 
     // MARK: - Scanning
@@ -234,13 +211,17 @@ final class MainViewModel: ObservableObject {
     func scan() async {
         guard !scanDirectory.isEmpty else { return }
         isProcessing = true
+        operation = .scanning
         progressValue = 0
-        progressMessage = "Scanning…"
+        progressMessage = "Scanning"
         // Drop any previous run's summary so the status line doesn't show stale
         // "created N" counts for a different library.
         conversionSummary = nil
         showingSummary = false
-        defer { isProcessing = false }
+        defer {
+            isProcessing = false
+            operation = .idle
+        }
 
         do {
             let discovered = try await scanner.scan(directory: URL(fileURLWithPath: scanDirectory)) { [weak self] fraction in
@@ -397,6 +378,13 @@ final class MainViewModel: ObservableObject {
     // MARK: - VDF import
 
     func importFromVDF(url: URL) async {
+        isProcessing = true
+        operation = .importing
+        progressMessage = "Importing from Steam"
+        defer {
+            isProcessing = false
+            operation = .idle
+        }
         conversionSummary = nil
         showingSummary = false
         do {
@@ -428,6 +416,23 @@ final class MainViewModel: ObservableObject {
         let trimmed = title.trimmingCharacters(in: .whitespaces)
         updateGame(game.id) { $0.title = trimmed }
         updateOverride(game.stableKey) { $0.customTitle = trimmed.isEmpty ? nil : trimmed }
+    }
+
+    /// Update title-backed UI immediately without performing a disk save for
+    /// every keystroke. The Properties view debounces `saveTitleDraft()` and
+    /// calls `setTitle` on focus loss for final whitespace normalization.
+    func setTitleDraft(_ title: String, for game: GameEntry) {
+        updateGame(game.id) { $0.title = title }
+        mutateOverride(game.stableKey) { $0.customTitle = title.isEmpty ? nil : title }
+    }
+
+    func saveTitleDraft() {
+        persist()
+    }
+
+    func setOutputDirectory(_ url: URL) {
+        outputDirectory = url.path
+        persist()
     }
 
     func setEmulatorChoice(_ choice: EmulatorChoice, for game: GameEntry) {
@@ -578,6 +583,59 @@ final class MainViewModel: ObservableObject {
         } catch {
             errorMessage = "Search failed: \(error.localizedDescription)"
             return []
+        }
+    }
+
+    /// Load every selectable icon for a match, followed by grid artwork as a
+    /// fallback. Automatic fetching still chooses the highest-scoring icon.
+    func artworkCandidates(for match: SGDBGame) async -> [SGDBArtworkCandidate] {
+        guard let provider = artworkProvider() else {
+            errorMessage = "Set a SteamGridDB API key in Settings first."
+            return []
+        }
+        do {
+            let icons = try await provider.getIcons(gameId: match.id)
+                .filter { $0.isPNG }
+                .sorted { ($0.score ?? 0) > ($1.score ?? 0) }
+                .map { SGDBArtworkCandidate(image: $0, sourceType: .icon) }
+            let grids = try await provider.getGrids(gameId: match.id)
+                .sorted { ($0.score ?? 0) > ($1.score ?? 0) }
+                .map { SGDBArtworkCandidate(image: $0, sourceType: .grid) }
+            return icons + grids
+        } catch {
+            errorMessage = "Artwork search failed: \(error.localizedDescription)"
+            return []
+        }
+    }
+
+    /// Apply the exact SteamGridDB asset selected by the user.
+    func applyArtworkCandidate(
+        _ candidate: SGDBArtworkCandidate,
+        match: SGDBGame,
+        setTitle: Bool,
+        for game: GameEntry
+    ) async {
+        guard let provider = artworkProvider() else {
+            errorMessage = "Set a SteamGridDB API key in Settings first."
+            return
+        }
+        updateGame(game.id) { $0.artworkStatus = .downloading }
+        do {
+            let data = try await provider.downloadImage(url: candidate.image.url)
+            let metadata = ArtworkMetadata(
+                sgdbGameId: match.id,
+                sgdbImageId: candidate.image.id,
+                downloadedAt: Date(),
+                sourceType: candidate.sourceType.rawValue)
+            let url = try artworkCache.store(originalPNG: data, metadata: metadata, for: game.stableKey)
+            updateOverride(game.stableKey) {
+                $0.sgdbGameId = match.id
+                $0.sgdbGameName = match.name
+            }
+            if setTitle { self.setTitle(match.name, for: game) }
+            updateGame(game.id) { $0.artworkStatus = .cached(url) }
+        } catch {
+            updateGame(game.id) { $0.artworkStatus = .failed(error.localizedDescription) }
         }
     }
 
@@ -785,70 +843,137 @@ final class MainViewModel: ObservableObject {
 
     // MARK: - Generation preview
 
-    /// Counts of what a generate run would do, for the live trust-signal label.
-    struct GenerationPreview: Equatable {
-        var created = 0
-        var updated = 0
-        var unchanged = 0
-        var removed = 0
-
-        var isEmpty: Bool { created == 0 && updated == 0 && removed == 0 }
+    /// The authoritative action for a game in the next generation run.
+    enum GenerationAction: Equatable {
+        case create
+        case update
+        case upToDate
+        case needsAttention
+        case excluded
     }
 
-    /// A cheap signature of the inputs that affect the preview, so the UI can
-    /// recompute only when the selection or last-generation timestamp changes.
+    /// One generation plan drives the table, output summary, and generator.
+    struct GenerationPlan: Equatable {
+        var created = 0
+        var updated = 0
+        var upToDate = 0
+        var needsAttention = 0
+        var excluded = 0
+        var removed = 0
+        var actions: [String: GenerationAction] = [:]
+
+        var pendingCount: Int { created + updated }
+        var selectedCount: Int { created + updated + upToDate + needsAttention }
+        var isUpToDate: Bool { pendingCount == 0 && needsAttention == 0 && selectedCount > 0 }
+
+        func action(for game: GameEntry) -> GenerationAction {
+            actions[game.stableKey] ?? (game.isSelected ? .needsAttention : .excluded)
+        }
+    }
+
+    /// A cheap signature of every input that can affect the generation plan.
     var generationSignature: Int {
         var hasher = Hasher()
-        for game in games where game.isSelected { hasher.combine(game.stableKey) }
+        for game in games {
+            hasher.combine(game.stableKey)
+            hasher.combine(game.isSelected)
+            hasher.combine(game.title)
+            hasher.combine(game.platform.id)
+            hasher.combine(game.emulator?.signatureToken)
+            hasher.combine(game.emulatorPath?.path)
+            hasher.combine(game.argsTemplate)
+            hasher.combine(game.launchPath.path)
+            if case .cached(let url) = game.artworkStatus {
+                hasher.combine(url.path)
+                if let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]) {
+                    hasher.combine(values.contentModificationDate)
+                    hasher.combine(values.fileSize)
+                }
+            }
+        }
+        hasher.combine(outputDirectory)
         hasher.combine(lastConversionDate)
         hasher.combine(removeOrphanedBundles)
+        hasher.combine(generationRevision)
         return hasher.finalize()
     }
 
     /// Non-mutating dry run: mirrors `generate()`'s change classification so the
     /// label matches what generate then does. A new/modified game with no
     /// emulator is NOT counted (generate skips it with a warning).
-    func previewChanges() async -> GenerationPreview {
+    func generationPlan() async -> GenerationPlan {
         let selected = games.filter { $0.isSelected }
         let previousState = try? await configStore.loadGameState()
-        let changes = incrementalManager.detectChanges(currentGames: selected, previousState: previousState)
-        var preview = GenerationPreview()
+        return makeGenerationPlan(previousState: previousState, selected: selected)
+    }
+
+    private func makeGenerationPlan(
+        previousState: GameConversionState?,
+        selected: [GameEntry]
+    ) -> GenerationPlan {
+        let outputURL = outputDirectory.isEmpty ? nil : URL(fileURLWithPath: outputDirectory)
+        let changes = incrementalManager.detectChanges(
+            currentGames: selected,
+            previousState: previousState,
+            outputDirectory: outputURL)
+        var plan = GenerationPlan()
+
+        for game in games where !game.isSelected {
+            plan.excluded += 1
+            plan.actions[game.stableKey] = .excluded
+        }
+
         for game in selected {
             guard let change = changes[game.stableKey] else { continue }
+            guard game.status == .ready else {
+                plan.needsAttention += 1
+                plan.actions[game.stableKey] = .needsAttention
+                continue
+            }
             switch change.changeType {
             case .unchanged:
-                preview.unchanged += 1
+                plan.upToDate += 1
+                plan.actions[game.stableKey] = .upToDate
             case .new:
-                if game.emulator != nil { preview.created += 1 }
+                plan.created += 1
+                plan.actions[game.stableKey] = .create
             case .modified:
-                if game.emulator != nil { preview.updated += 1 }
+                plan.updated += 1
+                plan.actions[game.stableKey] = .update
             case .removed:
                 break
             }
         }
         if removeOrphanedBundles {
-            preview.removed = changes.values.filter { $0.changeType == .removed }.count
+            plan.removed = changes.values.filter { $0.changeType == .removed }.count
         }
-        return preview
+        return plan
     }
 
     // MARK: - Generation
 
-    func generate() async {
+    func generate(forceRebuild: Bool = false) async {
         guard !outputDirectory.isEmpty else {
             errorMessage = "Select an output directory first."
             return
         }
         isProcessing = true
+        operation = .generating
         progressValue = 0
         conversionSummary = nil
         showingSummary = false
-        defer { isProcessing = false }
+        defer {
+            isProcessing = false
+            operation = .idle
+        }
 
         let outputURL = URL(fileURLWithPath: outputDirectory)
         let selected = games.filter { $0.isSelected }
         let previousState = try? await configStore.loadGameState()
-        let changes = incrementalManager.detectChanges(currentGames: selected, previousState: previousState)
+        let changes = incrementalManager.detectChanges(
+            currentGames: selected,
+            previousState: previousState,
+            outputDirectory: outputURL)
 
         var removed = 0
         if let deleted = try? incrementalManager.cleanupOrphanedGameBundles(
@@ -872,7 +997,7 @@ final class MainViewModel: ObservableObject {
             progressMessage = game.title
             guard let change = changes[game.stableKey] else { continue }
 
-            if change.changeType == .unchanged {
+            if change.changeType == .unchanged && !forceRebuild {
                 skipped += 1
                 if let previous = previousState?.convertedGames.first(where: { $0.stableKey == game.stableKey }) {
                     records.append(previous)
@@ -893,7 +1018,7 @@ final class MainViewModel: ObservableObject {
             }
 
             let bundle = ResolvedGameBundle(
-                bundleName: sanitizeBundleName(game.title),
+                bundleName: DefaultAppBundleGenerator.sanitizedBundleName(game.title),
                 bundleIdentifier: idByKey[game.stableKey] ?? "com.romshortcutmaker.game",
                 displayName: game.title,
                 executablePath: resolved.emulatorPath,
@@ -1008,6 +1133,7 @@ final class MainViewModel: ObservableObject {
     private func updateGame(_ id: UUID, _ transform: (inout GameEntry) -> Void) {
         guard let index = games.firstIndex(where: { $0.id == id }) else { return }
         transform(&games[index])
+        generationRevision &+= 1
     }
 
     private func updateOverride(_ key: String, _ transform: (inout GameOverride) -> Void) {
@@ -1025,9 +1151,4 @@ final class MainViewModel: ObservableObject {
         }
     }
 
-    private func sanitizeBundleName(_ name: String) -> String {
-        let invalid = CharacterSet(charactersIn: ":/\\")
-        let cleaned = name.components(separatedBy: invalid).joined(separator: "-")
-        return cleaned.isEmpty ? "Game" : cleaned
-    }
 }

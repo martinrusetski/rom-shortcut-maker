@@ -288,7 +288,8 @@ class IncrementalUpdateManager {
     /// behavior of the Steam path.
     func detectChanges(
         currentGames: [GameEntry],
-        previousState: GameConversionState?
+        previousState: GameConversionState?,
+        outputDirectory: URL?
     ) -> [String: GameChange] {
         var changes: [String: GameChange] = [:]
 
@@ -310,7 +311,16 @@ class IncrementalUpdateManager {
             if let previous = previousByKey[entry.stableKey] {
                 let signature = computeChangeSignature(for: entry)
                 let bundleExists = fileManager.fileExists(atPath: previous.bundlePath)
+                let expectedBundlePath = outputDirectory?
+                    .appendingPathComponent(DefaultAppBundleGenerator.sanitizedBundleName(entry.title))
+                    .appendingPathExtension("app")
+                    .standardizedFileURL.path
+                let previousBundlePath = URL(fileURLWithPath: previous.bundlePath)
+                    .standardizedFileURL.path
+                let destinationChanged = expectedBundlePath.map { $0 != previousBundlePath } ?? false
                 if !bundleExists {
+                    changes[entry.stableKey] = GameChange(entry: entry, changeType: .modified, previousBundlePath: previous.bundlePath)
+                } else if destinationChanged {
                     changes[entry.stableKey] = GameChange(entry: entry, changeType: .modified, previousBundlePath: previous.bundlePath)
                 } else if signature != previous.changeSignatureHash {
                     changes[entry.stableKey] = GameChange(entry: entry, changeType: .modified, previousBundlePath: previous.bundlePath)
@@ -329,10 +339,11 @@ class IncrementalUpdateManager {
         return changes
     }
 
-    /// The change signature for a game entry: hashes ROM path + ROM content
-    /// SHA256 + resolved emulator path + resolved args template + artwork identity.
+    /// The change signature for a game entry: hashes title + ROM file signatures
+    /// + resolved emulator + args template + artwork bytes.
     func computeChangeSignature(for entry: GameEntry) -> String {
         var parts: [String] = []
+        parts.append(entry.title)
         parts.append(entry.launchPath.standardizedFileURL.path)
         parts.append(romFileSignature(entry.romPath) ?? "nosig")
         // Signature of member files (a .cue's tracks, an .m3u's discs) so a
@@ -349,11 +360,18 @@ class IncrementalUpdateManager {
         parts.append(entry.argsTemplate)
         switch entry.artworkStatus {
         case .cached(let url):
-            parts.append("art:" + url.path)
+            parts.append("art:" + artworkSignature(url))
         default:
             parts.append("art:none")
         }
         let data = Data(parts.joined(separator: "|").utf8)
+        return SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Artwork files are small compared with ROMs, so hashing their bytes is
+    /// cheap and correctly detects a replacement written to the same cache URL.
+    private func artworkSignature(_ url: URL) -> String {
+        guard let data = try? Data(contentsOf: url) else { return "missing:" + url.path }
         return SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
     }
 

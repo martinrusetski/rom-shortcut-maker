@@ -56,7 +56,7 @@ final class IncrementalUpdateManagerGameTests: XCTestCase {
 
     func testAllNewWithoutPreviousState() throws {
         let entry = makeEntry(rom: try writeROM("a.sfc", bytes: [1, 2, 3]))
-        let changes = manager.detectChanges(currentGames: [entry], previousState: nil)
+        let changes = manager.detectChanges(currentGames: [entry], previousState: nil, outputDirectory: nil)
         XCTAssertEqual(changes[entry.stableKey]?.changeType, .new)
     }
 
@@ -66,7 +66,7 @@ final class IncrementalUpdateManagerGameTests: XCTestCase {
         let state = GameConversionState(convertedGames: [
             manager.buildConvertedGame(for: entry, bundlePath: bundle.path)
         ])
-        let changes = manager.detectChanges(currentGames: [entry], previousState: state)
+        let changes = manager.detectChanges(currentGames: [entry], previousState: state, outputDirectory: nil)
         XCTAssertEqual(changes[entry.stableKey]?.changeType, .unchanged)
     }
 
@@ -78,8 +78,53 @@ final class IncrementalUpdateManagerGameTests: XCTestCase {
             manager.buildConvertedGame(for: original, bundlePath: bundle.path)
         ])
         let changed = makeEntry(rom: rom, args: "\"{emulator}\" --fullscreen \"{rom}\"")
-        let changes = manager.detectChanges(currentGames: [changed], previousState: state)
+        let changes = manager.detectChanges(currentGames: [changed], previousState: state, outputDirectory: nil)
         XCTAssertEqual(changes[changed.stableKey]?.changeType, .modified)
+    }
+
+    func testModifiedWhenTitleChanges() throws {
+        let entry = makeEntry(rom: try writeROM("a.sfc", bytes: [1, 2, 3]))
+        let bundle = try makeBundleDir("Game.app")
+        let state = GameConversionState(convertedGames: [
+            manager.buildConvertedGame(for: entry, bundlePath: bundle.path)
+        ])
+        var renamed = entry
+        renamed.title = "Renamed Game"
+
+        let changes = manager.detectChanges(
+            currentGames: [renamed], previousState: state, outputDirectory: tempDir)
+
+        XCTAssertEqual(changes[renamed.stableKey]?.changeType, .modified)
+    }
+
+    func testModifiedWhenArtworkChangesAtSamePath() throws {
+        var entry = makeEntry(rom: try writeROM("a.sfc", bytes: [1, 2, 3]))
+        let artwork = try writeROM("original.png", bytes: [1, 2, 3])
+        entry.artworkStatus = .cached(artwork)
+        let bundle = try makeBundleDir("Game.app")
+        let state = GameConversionState(convertedGames: [
+            manager.buildConvertedGame(for: entry, bundlePath: bundle.path)
+        ])
+
+        try Data([9, 8, 7, 6]).write(to: artwork, options: .atomic)
+        let changes = manager.detectChanges(
+            currentGames: [entry], previousState: state, outputDirectory: tempDir)
+
+        XCTAssertEqual(changes[entry.stableKey]?.changeType, .modified)
+    }
+
+    func testModifiedWhenOutputDirectoryChanges() throws {
+        let entry = makeEntry(rom: try writeROM("a.sfc", bytes: [1, 2, 3]))
+        let bundle = try makeBundleDir("Game.app")
+        let state = GameConversionState(convertedGames: [
+            manager.buildConvertedGame(for: entry, bundlePath: bundle.path)
+        ])
+        let otherOutput = tempDir.appendingPathComponent("Other")
+
+        let changes = manager.detectChanges(
+            currentGames: [entry], previousState: state, outputDirectory: otherOutput)
+
+        XCTAssertEqual(changes[entry.stableKey]?.changeType, .modified)
     }
 
     func testModifiedWhenRetroArchCoreChanges() throws {
@@ -102,7 +147,7 @@ final class IncrementalUpdateManagerGameTests: XCTestCase {
         switched.emulatorPath = retroArch
         switched.emulator = .retroArchCore(core: "bsnes_libretro.dylib")
 
-        let changes = manager.detectChanges(currentGames: [switched], previousState: state)
+        let changes = manager.detectChanges(currentGames: [switched], previousState: state, outputDirectory: nil)
         XCTAssertEqual(changes[switched.stableKey]?.changeType, .modified)
     }
 
@@ -111,7 +156,7 @@ final class IncrementalUpdateManagerGameTests: XCTestCase {
         let state = GameConversionState(convertedGames: [
             manager.buildConvertedGame(for: entry, bundlePath: tempDir.appendingPathComponent("Missing.app").path)
         ])
-        let changes = manager.detectChanges(currentGames: [entry], previousState: state)
+        let changes = manager.detectChanges(currentGames: [entry], previousState: state, outputDirectory: nil)
         XCTAssertEqual(changes[entry.stableKey]?.changeType, .modified)
     }
 
@@ -124,7 +169,7 @@ final class IncrementalUpdateManagerGameTests: XCTestCase {
         ])
         // Re-dump: same path, different content (and size).
         try Data([9, 9, 9, 9, 9]).write(to: rom)
-        let changes = manager.detectChanges(currentGames: [entry], previousState: state)
+        let changes = manager.detectChanges(currentGames: [entry], previousState: state, outputDirectory: nil)
         XCTAssertEqual(changes[entry.stableKey]?.changeType, .modified)
     }
 
@@ -134,7 +179,7 @@ final class IncrementalUpdateManagerGameTests: XCTestCase {
         let state = GameConversionState(convertedGames: [
             manager.buildConvertedGame(for: entry, bundlePath: bundle.path)
         ])
-        let changes = manager.detectChanges(currentGames: [], previousState: state)
+        let changes = manager.detectChanges(currentGames: [], previousState: state, outputDirectory: nil)
         XCTAssertEqual(changes[entry.stableKey]?.changeType, .removed)
         XCTAssertEqual(changes[entry.stableKey]?.previousBundlePath, bundle.path)
     }
@@ -150,7 +195,7 @@ final class IncrementalUpdateManagerGameTests: XCTestCase {
         ])
         // Re-dump a track (entry .cue unchanged, but a member changed).
         try Data([9, 9, 9, 9, 9]).write(to: track)
-        let changes = manager.detectChanges(currentGames: [entry], previousState: state)
+        let changes = manager.detectChanges(currentGames: [entry], previousState: state, outputDirectory: nil)
         XCTAssertEqual(changes[entry.stableKey]?.changeType, .modified)
     }
 

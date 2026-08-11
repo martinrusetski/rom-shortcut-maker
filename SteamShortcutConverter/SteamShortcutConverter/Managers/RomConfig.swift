@@ -44,9 +44,6 @@ struct AppConfigurationV2: Codable, Equatable {
     /// v1 custom names (keyed by Steam appID), preserved through migration so they
     /// can reattach on the first VDF re-import.
     var legacyCustomNames: [UInt32: String]
-    /// Platform ids whose list section the user has collapsed. Persisted so the
-    /// expand/collapse state survives relaunch.
-    var collapsedPlatforms: Set<String>
     /// Explicit user-created folder rules for unresolved ROMs. Keys are
     /// standardized source-directory paths and values are platform ids.
     var folderPlatformRules: [String: String]
@@ -62,7 +59,6 @@ struct AppConfigurationV2: Codable, Equatable {
         gameOverrides: [String: GameOverride] = [:],
         lastConversionDate: Date? = nil,
         legacyCustomNames: [UInt32: String] = [:],
-        collapsedPlatforms: Set<String> = [],
         folderPlatformRules: [String: String] = [:]
     ) {
         self.version = version
@@ -75,14 +71,11 @@ struct AppConfigurationV2: Codable, Equatable {
         self.gameOverrides = gameOverrides
         self.lastConversionDate = lastConversionDate
         self.legacyCustomNames = legacyCustomNames
-        self.collapsedPlatforms = collapsedPlatforms
         self.folderPlatformRules = folderPlatformRules
     }
 
-    // Custom decoder so newly-added fields (`collapsedPlatforms`, and any future
-    // additions) don't break loading of an existing on-disk config that predates
-    // them — a missing key falls back to the default rather than throwing and
-    // wiping the user's whole configuration.
+    // Missing newer keys fall back to defaults rather than wiping the user's
+    // whole configuration.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 2
@@ -95,7 +88,6 @@ struct AppConfigurationV2: Codable, Equatable {
         gameOverrides = try c.decodeIfPresent([String: GameOverride].self, forKey: .gameOverrides) ?? [:]
         lastConversionDate = try c.decodeIfPresent(Date.self, forKey: .lastConversionDate)
         legacyCustomNames = try c.decodeIfPresent([UInt32: String].self, forKey: .legacyCustomNames) ?? [:]
-        collapsedPlatforms = try c.decodeIfPresent(Set<String>.self, forKey: .collapsedPlatforms) ?? []
         folderPlatformRules = try c.decodeIfPresent([String: String].self, forKey: .folderPlatformRules) ?? [:]
     }
 

@@ -107,7 +107,7 @@ final class SteamGridDBClient: ArtworkProvider {
     }
 
     private func get(_ url: URL) async throws -> Data {
-        try await throttle()
+        await throttle()
 
         var request = URLRequest(url: url)
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
@@ -118,7 +118,7 @@ final class SteamGridDBClient: ArtworkProvider {
         if http.statusCode == 429 {
             let retryAfter = Double(http.value(forHTTPHeaderField: "Retry-After") ?? "") ?? minInterval
             await sleep(retryAfter)
-            try await throttle()
+            await throttle()
             let (retryData, retryResponse) = try await session.data(for: request)
             guard let retryHTTP = retryResponse as? HTTPURLResponse else { throw ClientError.invalidResponse }
             guard retryHTTP.statusCode == 200 else { throw ClientError.httpError(retryHTTP.statusCode) }

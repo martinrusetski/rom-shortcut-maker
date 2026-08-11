@@ -87,87 +87,20 @@ struct ThumbnailView: View {
     }
 }
 
-// MARK: - Section header
+// MARK: - Table cells
 
-/// Collapsible platform section header: chevron + name + count. The "unknown"
-/// bucket is always expanded and gets no chevron (it's a call to action, not a
-/// normal group).
-struct PlatformSectionHeader: View {
-    let platform: Platform
-    let count: Int
-    let isCollapsed: Bool
-    let isUnknown: Bool
-    let toggle: () -> Void
-
-    var body: some View {
-        if isUnknown {
-            Label("\(platform.displayName) (\(count))", systemImage: "questionmark.folder")
-                .font(.subheadline.weight(.semibold))
-                .foregroundColor(.orange)
-                .textCase(nil)
-        } else {
-            Button(action: toggle) {
-                HStack(spacing: 6) {
-                    Image(systemName: "chevron.right")
-                        .font(.caption2.weight(.bold))
-                        .foregroundColor(.secondary)
-                        .rotationEffect(.degrees(isCollapsed ? 0 : 90))
-                    Text("\(platform.displayName)  ")
-                        .font(.subheadline.weight(.semibold))
-                    + Text("(\(count))")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .textCase(nil)
-        }
-    }
-}
-
-// MARK: - Game row
-
-/// One game in the main list. Fixed contents, no inline editors — all per-game
-/// editing happens in the Game Properties window.
-struct GameListRow: View {
+struct GameTitleCell: View {
     let game: GameEntry
-    let onToggleInclude: (Bool) -> Void
-    let onInfo: () -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
-            Toggle("", isOn: Binding(
-                get: { game.isSelected },
-                set: { onToggleInclude($0) }
-            ))
-            .labelsHidden()
-            .help("Include in generation")
-            .accessibilityLabel("Include \(game.title) in generation")
-
+        HStack(spacing: 8) {
             ThumbnailView(url: artworkURL, size: 28)
                 .accessibilityHidden(true)
-
             Text(game.title)
                 .lineLimit(1)
                 .truncationMode(.middle)
-
-            details
-
-            Spacer(minLength: 8)
-
-            statusView
-
-            Button(action: onInfo) {
-                Image(systemName: "info.circle")
-            }
-            .buttonStyle(.borderless)
-            .foregroundColor(.secondary)
-            .help("Game Properties")
-            .accessibilityLabel("Game Properties for \(game.title)")
         }
-        .padding(.vertical, 3)
+        .opacity(game.isSelected ? 1 : 0.55)
     }
 
     private var artworkURL: URL? {
@@ -175,52 +108,62 @@ struct GameListRow: View {
         return nil
     }
 
-    private var discCount: Int? {
-        guard game.launchPath.pathExtension.lowercased() == "m3u",
-              let count = game.discCount, count > 0 else { return nil }
-        return count
-    }
+}
 
-    @ViewBuilder
-    private var details: some View {
-        HStack(spacing: 6) {
-            if let discs = discCount {
-                Text("\(discs) discs")
-            } else if !game.additionalFiles.isEmpty {
-                Text("+\(game.additionalFiles.count) files")
-            }
-            if let emulator = game.emulator?.shortDisplayName {
-                Text(emulator)
+struct GameFileCell: View {
+    let game: GameEntry
+
+    var body: some View {
+        Group {
+            if game.launchPath.pathExtension.lowercased() == "m3u", let count = game.discCount {
+                Text(".m3u · \(count) discs")
+            } else {
+                Text(game.launchPath.pathExtension.isEmpty ? "—" : ".\(game.launchPath.pathExtension.lowercased())")
             }
         }
-        .font(.caption)
         .foregroundColor(.secondary)
         .lineLimit(1)
     }
+}
 
-    @ViewBuilder
-    private var statusView: some View {
-        if case .downloading = game.artworkStatus {
-            ProgressView().controlSize(.small)
-        } else {
-            switch game.status {
-            case .ready:
-                Image(systemName: "checkmark")
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(.secondary.opacity(0.7))
-                    .help("Ready to generate")
-                    .accessibilityLabel("Ready to generate")
-            case .noEmulator:
-                Label("No emulator", systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundColor(.orange)
-                    .labelStyle(.titleAndIcon)
-            case .unknownPlatform:
-                Label("Unknown platform", systemImage: "questionmark.circle.fill")
-                    .font(.caption)
-                    .foregroundColor(.orange)
-                    .labelStyle(.titleAndIcon)
+struct GenerationStatusCell: View {
+    let game: GameEntry
+    let action: MainViewModel.GenerationAction
+
+    var body: some View {
+        Group {
+            if case .downloading = game.artworkStatus {
+                Label("Artwork", systemImage: "arrow.down.circle")
+                    .foregroundColor(.secondary)
+            } else {
+                switch action {
+                case .create:
+                    Label("New", systemImage: "plus.circle.fill")
+                        .foregroundColor(.accentColor)
+                case .update:
+                    Label("Update", systemImage: "arrow.triangle.2.circlepath.circle.fill")
+                        .foregroundColor(.accentColor)
+                case .upToDate:
+                    Label("Up to date", systemImage: "checkmark.circle")
+                        .foregroundColor(.secondary)
+                case .excluded:
+                    Text("Excluded").foregroundColor(.secondary)
+                case .needsAttention:
+                    switch game.status {
+                    case .unknownPlatform:
+                        Label("Unknown platform", systemImage: "questionmark.circle.fill")
+                            .foregroundColor(.orange)
+                    case .noEmulator:
+                        Label("No emulator", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                    case .ready:
+                        Label("Needs attention", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                    }
+                }
             }
         }
+        .font(.caption)
+        .lineLimit(1)
     }
 }

@@ -29,6 +29,15 @@ struct SGDBImage: Equatable, Codable {
     }
 }
 
+/// One user-selectable SteamGridDB asset. Icons are preferred, while grids are
+/// exposed as a clearly-labelled fallback when icon coverage is sparse.
+struct SGDBArtworkCandidate: Identifiable, Equatable {
+    let image: SGDBImage
+    let sourceType: ArtworkSourceType
+
+    var id: String { "\(sourceType.rawValue)-\(image.id)" }
+}
+
 enum ArtworkSourceType: String, Codable, Equatable {
     case icon
     case grid
