@@ -106,6 +106,8 @@ final class ROMScanner: ROMScanning {
 
     func scan(directory: URL,
               progress: @escaping (Double) -> Void) async throws -> [DiscoveredROM] {
+        discContentInspector.clearCache()
+
         let fileManager = FileManager.default
         let knownExtensions = database.allRomExtensions
 
@@ -330,6 +332,7 @@ final class ROMScanner: ROMScanning {
     private struct PlaylistPlatformProbe {
         let candidates: [Platform]
         let evidence: [String]
+        let hasConflict: Bool
     }
 
     private func resolvePlatform(
@@ -356,15 +359,18 @@ final class ROMScanner: ROMScanning {
 
         func info(
             candidates: [Platform],
-            resolvedBy: String?
+            resolvedBy: String?,
+            hasConflict: Bool = false
         ) -> PlatformDetectionInfo {
-            PlatformDetectionInfo(
+            var result = PlatformDetectionInfo(
                 fileExtension: extensionName,
                 candidates: candidates,
                 evidence: evidence,
                 resolvedBy: resolvedBy,
                 sourceDirectory: url.deletingLastPathComponent().standardizedFileURL
             )
+            result.hasConflict = hasConflict
+            return result
         }
 
         if byExtension.count == 1 {
@@ -382,6 +388,13 @@ final class ROMScanner: ROMScanning {
                playlistDepth: playlistDepth
            ) {
             evidence.append(contentsOf: playlistProbe.evidence)
+            if playlistProbe.hasConflict {
+                return (nil, true, info(
+                    candidates: playlistProbe.candidates,
+                    resolvedBy: nil,
+                    hasConflict: true
+                ))
+            }
             if playlistProbe.candidates.count == 1 {
                 return (playlistProbe.candidates[0], false, info(
                     candidates: playlistProbe.candidates,
@@ -420,10 +433,20 @@ final class ROMScanner: ROMScanning {
         // Folder names are deliberately last: they are useful organization
         // hints, but must not override a stronger extension or image signal.
         if let folderPlatform = inferPlatform(for: url, root: root) {
-            evidence.append("Folder fallback: \(folderPlatform.displayName).")
-            return (folderPlatform, false, info(
-                candidates: [folderPlatform],
-                resolvedBy: "folder fallback"
+            if candidates.isEmpty || candidates.contains(where: { $0.id == folderPlatform.id }) {
+                evidence.append("Folder fallback: \(folderPlatform.displayName).")
+                return (folderPlatform, false, info(
+                    candidates: [folderPlatform],
+                    resolvedBy: "folder fallback"
+                ))
+            }
+            evidence.append(
+                "Folder \(folderPlatform.displayName) conflicts with stronger platform evidence."
+            )
+            return (nil, true, info(
+                candidates: candidates,
+                resolvedBy: nil,
+                hasConflict: true
             ))
         }
         return (nil, candidates.count > 1, info(candidates: candidates, resolvedBy: nil))
@@ -444,6 +467,7 @@ final class ROMScanner: ROMScanning {
         guard !entries.isEmpty else { return nil }
 
         var possibleIDs: Set<String>?
+        var observedIDs = Set<String>()
         var evidence: [String] = []
         for entry in entries.prefix(4) {
             let member = resolvePlatform(
@@ -455,6 +479,15 @@ final class ROMScanner: ROMScanning {
                 "Playlist member \(entry.lastPathComponent): \($0)"
             })
 
+            if member.detection.hasConflict {
+                evidence.append("Playlist member \(entry.lastPathComponent) has conflicting evidence.")
+                return PlaylistPlatformProbe(
+                    candidates: member.detection.candidates,
+                    evidence: evidence,
+                    hasConflict: true
+                )
+            }
+
             let memberIDs: Set<String>
             if let platform = member.platform {
                 memberIDs = [platform.id]
@@ -462,8 +495,16 @@ final class ROMScanner: ROMScanning {
                 memberIDs = Set(member.detection.candidates.map(\.id))
             }
             guard !memberIDs.isEmpty else { continue }
+            observedIDs.formUnion(memberIDs)
             possibleIDs = possibleIDs.map { $0.intersection(memberIDs) } ?? memberIDs
-            if possibleIDs?.isEmpty == true { break }
+            if possibleIDs?.isEmpty == true {
+                evidence.append("Playlist members disagree on the platform.")
+                return PlaylistPlatformProbe(
+                    candidates: database.allPlatforms.filter { observedIDs.contains($0.id) },
+                    evidence: evidence,
+                    hasConflict: true
+                )
+            }
         }
 
         guard let possibleIDs, !possibleIDs.isEmpty else { return nil }
@@ -471,11 +512,19 @@ final class ROMScanner: ROMScanning {
         let filteredIDs = allowedIDs.isEmpty
             ? possibleIDs
             : possibleIDs.intersection(allowedIDs)
-        guard !filteredIDs.isEmpty else { return nil }
+        guard !filteredIDs.isEmpty else {
+            evidence.append("Playlist member evidence is incompatible with the .m3u platform mappings.")
+            return PlaylistPlatformProbe(
+                candidates: database.allPlatforms.filter { observedIDs.contains($0.id) },
+                evidence: evidence,
+                hasConflict: true
+            )
+        }
 
         return PlaylistPlatformProbe(
             candidates: database.allPlatforms.filter { filteredIDs.contains($0.id) },
-            evidence: evidence
+            evidence: evidence,
+            hasConflict: false
         )
     }
 

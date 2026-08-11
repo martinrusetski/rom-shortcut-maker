@@ -208,6 +208,17 @@ final class ROMScannerTests: XCTestCase {
         XCTAssertTrue(game?.detection?.evidence.contains { $0.contains("PS2 DVD") } ?? false)
     }
 
+    func testRescanInvalidatesContentDetectionCache() async throws {
+        try makeBinaryFile("Loose/Disc.iso", data: Data("CDVDGEN".utf8))
+        var game = rom(try await scan(), named: "Disc.iso")
+        XCTAssertEqual(game?.platform?.id, "ps2")
+
+        try makeBinaryFile("Loose/Disc.iso", data: Data("PS3_GAME".utf8))
+        game = rom(try await scan(), named: "Disc.iso")
+        XCTAssertEqual(game?.platform?.id, "ps3")
+        XCTAssertEqual(game?.detection?.resolvedBy, "disc content")
+    }
+
     func testMDFPayloadSignatureResolvesPSPForGenericMDS() async throws {
         try makeFile("Loose/Disc.mds")
         try makeBinaryFile("Loose/Disc.mdf", data: Data("PSP_GAME".utf8))
@@ -242,6 +253,18 @@ final class ROMScannerTests: XCTestCase {
         XCTAssertNotNil(game)
         XCTAssertNil(game?.platform)
         XCTAssertTrue(game?.platformAmbiguous ?? false)
+    }
+
+    func testFolderCannotOverrideContradictoryCHDMetadata() async throws {
+        try makeCHD("Dreamcast/DiscImage.chd", metadataTag: "CHT2", logicalBytes: 700_000_000)
+        let game = rom(try await scan(), named: "DiscImage.chd")
+
+        XCTAssertNil(game?.platform)
+        XCTAssertTrue(game?.platformAmbiguous ?? false)
+        XCTAssertTrue(game?.detection?.hasConflict ?? false)
+        XCTAssertTrue(game?.detection?.evidence.contains {
+            $0.contains("conflicts with stronger platform evidence")
+        } ?? false)
     }
 
     func testNonRomFileIsSkipped() async throws {
@@ -397,6 +420,21 @@ final class ROMScannerTests: XCTestCase {
         XCTAssertEqual(game?.platform?.id, "ps2")
         XCTAssertTrue(game?.detection?.evidence.contains {
             $0.contains("CHD metadata")
+        } ?? false)
+    }
+
+    func testM3UWithContradictoryMembersRemainsAmbiguous() async throws {
+        try makeFile("Loose/Disc 1.gdi", contents: "1\n0 0 4 2352 \"track.bin\" 0\n")
+        try makeFile("Loose/Disc 2.bin", contents: "SEGASATURN")
+        try makeFile("Loose/Disc 2.cue", contents: "FILE \"Disc 2.bin\" BINARY\n")
+        try makeFile("Loose/Mixed.m3u", contents: "Disc 1.gdi\nDisc 2.cue\n")
+
+        let game = rom(try await scan(), named: "Mixed.m3u")
+        XCTAssertNil(game?.platform)
+        XCTAssertTrue(game?.platformAmbiguous ?? false)
+        XCTAssertTrue(game?.detection?.hasConflict ?? false)
+        XCTAssertTrue(game?.detection?.evidence.contains {
+            $0.contains("Playlist members disagree")
         } ?? false)
     }
 

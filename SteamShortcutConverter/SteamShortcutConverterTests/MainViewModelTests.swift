@@ -47,6 +47,40 @@ final class FakeGameBundleGenerator: GameBundleGenerating {
     }
 }
 
+final class CountingRomConfigStore: RomConfigStore {
+    private let lock = NSLock()
+    private var config: AppConfigurationV2 = .default
+    private var state: GameConversionState?
+    private var saves = 0
+
+    var saveCount: Int { withLock { saves } }
+
+    func resetSaveCount() {
+        withLock { saves = 0 }
+    }
+
+    func load() async throws -> AppConfigurationV2 { withLock { config } }
+
+    func save(_ config: AppConfigurationV2) async throws {
+        withLock {
+            self.config = config
+            saves += 1
+        }
+    }
+
+    func loadGameState() async throws -> GameConversionState? { withLock { state } }
+
+    func saveGameState(_ state: GameConversionState) async throws {
+        withLock { self.state = state }
+    }
+
+    private func withLock<T>(_ operation: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return operation()
+    }
+}
+
 @MainActor
 final class MainViewModelTests: XCTestCase {
 
@@ -97,7 +131,7 @@ final class MainViewModelTests: XCTestCase {
 
     private func makeViewModel(
         roms: [DiscoveredROM],
-        store: InMemoryRomConfigStore = InMemoryRomConfigStore(),
+        store: RomConfigStore = InMemoryRomConfigStore(),
         provider: ArtworkProvider? = nil,
         generator: GameBundleGenerating? = nil,
         scanner: FakeROMScanner? = nil
@@ -552,6 +586,24 @@ final class MainViewModelTests: XCTestCase {
         })
     }
 
+    func testBatchPlatformAssignmentPersistsOnlyOnce() async {
+        let store = CountingRomConfigStore()
+        let vm = makeViewModel(roms: [
+            unknownROM("/ROMs/Loose/One.mds"),
+            unknownROM("/ROMs/Loose/Two.mds"),
+            unknownROM("/ROMs/Loose/Three.mds")
+        ], store: store)
+        await vm.scan()
+        await waitForSaves(in: store, minimum: 1)
+        store.resetSaveCount()
+
+        vm.setPlatform(Platform(id: "ps2", displayName: "PS2"), for: vm.games)
+        await waitForSaves(in: store, minimum: 1)
+        try? await Task.sleep(nanoseconds: 20_000_000)
+
+        XCTAssertEqual(store.saveCount, 1)
+    }
+
     func testScanUsesConfiguredLocalHashMatch() async throws {
         let romURL = tempDir.appendingPathComponent("Known.iso")
         try Data("hello".utf8).write(to: romURL)
@@ -570,6 +622,23 @@ final class MainViewModelTests: XCTestCase {
         XCTAssertEqual(vm.games[0].platform.id, "ps2")
         XCTAssertEqual(vm.games[0].title, "Known Game")
         XCTAssertEqual(vm.detectionInfo(for: vm.games[0])?.resolvedBy, "local hash database")
+    }
+
+    func testScanSurfacesMalformedHashDatabase() async throws {
+        let databaseURL = tempDir.appendingPathComponent("hashes.json")
+        try Data("not json".utf8).write(to: databaseURL)
+        let vm = makeViewModel(roms: [unknownROM("/ROMs/Loose/Mystery.mds")])
+        vm.hashDatabasePath = databaseURL.path
+
+        await vm.scan()
+
+        XCTAssertTrue(vm.errorMessage?.contains("Invalid hash database") ?? false)
+    }
+
+    private func waitForSaves(in store: CountingRomConfigStore, minimum: Int) async {
+        for _ in 0..<100 where store.saveCount < minimum {
+            await Task.yield()
+        }
     }
 
     // MARK: - Args override round-trip

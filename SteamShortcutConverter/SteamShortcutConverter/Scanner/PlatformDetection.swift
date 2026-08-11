@@ -15,6 +15,9 @@ struct PlatformDetectionInfo: Equatable {
     var evidence: [String]
     var resolvedBy: String?
     let sourceDirectory: URL
+    /// Strong signals disagreed, so weaker fallbacks must not turn the result
+    /// into a confident platform assignment.
+    var hasConflict: Bool = false
 
     var candidateNames: String {
         candidates.map(\.displayName).joined(separator: ", ")
@@ -23,6 +26,9 @@ struct PlatformDetectionInfo: Equatable {
     var summary: String {
         if let resolvedBy {
             return "Resolved by \(resolvedBy)."
+        }
+        if hasConflict {
+            return "Conflicting platform evidence was found."
         }
         if candidates.isEmpty {
             return "No unique platform signature was found."

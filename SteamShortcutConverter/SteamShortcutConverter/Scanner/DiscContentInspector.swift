@@ -216,6 +216,13 @@ final class DiscContentInspector {
         inspect(url: url, depth: 0)
     }
 
+    /// A scanner instance is reused between rescans. Cached probes are valid
+    /// only for one scan because a ROM may have been replaced at the same path.
+    func clearCache() {
+        cache.removeAll(keepingCapacity: true)
+        chdCache.removeAll(keepingCapacity: true)
+    }
+
     private func inspect(url: URL, depth: Int) -> DiscContentProbe? {
         let sources: [URL]
         switch url.pathExtension.lowercased() {

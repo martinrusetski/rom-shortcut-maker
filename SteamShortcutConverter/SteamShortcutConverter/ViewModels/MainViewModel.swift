@@ -253,7 +253,7 @@ final class MainViewModel: ObservableObject {
                     fileSize: rom.fileSize
                 )
             }
-            let hashMatches = await LocalHashDatabase.matches(
+            let hashMatches = try await LocalHashDatabase.matches(
                 inputs: hashInputs,
                 databaseURL: hashDatabasePath.isEmpty ? nil : URL(fileURLWithPath: hashDatabasePath)
             )
@@ -436,24 +436,19 @@ final class MainViewModel: ObservableObject {
     }
 
     func setPlatform(_ platform: Platform, for game: GameEntry) {
-        updateGame(game.id) {
-            $0.platform = platform
-            if let choice = self.emulatorConfig.defaultChoice(
-                for: platform,
-                romExtension: $0.launchPath.pathExtension
-            ) {
-                self.assignEmulator(&$0, choice: choice)
-            } else {
-                self.clearEmulator(&$0)
-            }
-        }
+        applyPlatform(platform, toGameID: game.id)
         updateOverride(game.stableKey) { $0.platform = platform.id }
     }
 
     /// Assign a platform override to several games, used by the Unknown bucket's
     /// batch action.
     func setPlatform(_ platform: Platform, for games: [GameEntry]) {
-        for game in games { setPlatform(platform, for: game) }
+        guard !games.isEmpty else { return }
+        for game in games {
+            applyPlatform(platform, toGameID: game.id)
+            mutateOverride(game.stableKey) { $0.platform = platform.id }
+        }
+        persist()
     }
 
     /// Persist an explicit fallback rule for a source folder and apply it to
@@ -982,6 +977,20 @@ final class MainViewModel: ObservableObject {
         entry.argsTemplate = ""
     }
 
+    private func applyPlatform(_ platform: Platform, toGameID id: GameEntry.ID) {
+        updateGame(id) {
+            $0.platform = platform
+            if let choice = self.emulatorConfig.defaultChoice(
+                for: platform,
+                romExtension: $0.launchPath.pathExtension
+            ) {
+                self.assignEmulator(&$0, choice: choice)
+            } else {
+                self.clearEmulator(&$0)
+            }
+        }
+    }
+
     private func matchingFolderRule(for sourceDirectory: URL) -> (path: String, platformID: String)? {
         let scanRoot = URL(fileURLWithPath: scanDirectory).standardizedFileURL.path
         var current = sourceDirectory.standardizedFileURL
@@ -1002,6 +1011,11 @@ final class MainViewModel: ObservableObject {
     }
 
     private func updateOverride(_ key: String, _ transform: (inout GameOverride) -> Void) {
+        mutateOverride(key, transform)
+        persist()
+    }
+
+    private func mutateOverride(_ key: String, _ transform: (inout GameOverride) -> Void) {
         var override = config.gameOverrides[key] ?? GameOverride()
         transform(&override)
         if override == GameOverride() {
@@ -1009,7 +1023,6 @@ final class MainViewModel: ObservableObject {
         } else {
             config.gameOverrides[key] = override
         }
-        persist()
     }
 
     private func sanitizeBundleName(_ name: String) -> String {
