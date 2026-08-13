@@ -41,14 +41,14 @@ final class IncrementalUpdateManagerGameTests: XCTestCase {
         return url
     }
 
-    private func makeEntry(rom: URL, args: String = "\"{emulator}\" \"{rom}\"") -> GameEntry {
+    private func makeEntry(rom: URL, args: [String] = ["{romPath}"]) -> GameEntry {
         GameEntry(
             title: "Game",
             romPath: rom,
             romMetadata: ROMMetadata(rawFilename: rom.lastPathComponent, title: "Game"),
             platform: Platform(id: "snes", displayName: "SNES"),
             emulatorPath: URL(fileURLWithPath: "/Applications/Snes9x.app"),
-            argsTemplate: args
+            launchArguments: args
         )
     }
 
@@ -77,7 +77,7 @@ final class IncrementalUpdateManagerGameTests: XCTestCase {
         let state = GameConversionState(convertedGames: [
             manager.buildConvertedGame(for: original, bundlePath: bundle.path)
         ])
-        let changed = makeEntry(rom: rom, args: "\"{emulator}\" --fullscreen \"{rom}\"")
+        let changed = makeEntry(rom: rom, args: ["--fullscreen", "{romPath}"])
         let changes = manager.detectChanges(currentGames: [changed], previousState: state, outputDirectory: nil)
         XCTAssertEqual(changes[changed.stableKey]?.changeType, .modified)
     }
@@ -132,7 +132,7 @@ final class IncrementalUpdateManagerGameTests: XCTestCase {
         // the emulator choice differs. The bundle must still be regenerated.
         let rom = try writeROM("a.sfc", bytes: [1, 2, 3])
         let retroArch = URL(fileURLWithPath: "/Applications/RetroArch.app")
-        let coreArgs = "\"{emulator}\" -L \"{core}\" \"{rom}\""
+        let coreArgs = ["-L", "{corePath}", "{romPath}"]
 
         var original = makeEntry(rom: rom, args: coreArgs)
         original.emulatorPath = retroArch

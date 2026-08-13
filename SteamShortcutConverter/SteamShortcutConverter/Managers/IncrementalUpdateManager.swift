@@ -357,7 +357,7 @@ class IncrementalUpdateManager {
         // only thing that distinguishes them.
         parts.append(entry.emulator?.signatureToken ?? "nochoice")
         parts.append(entry.emulatorPath?.path ?? "noemu")
-        parts.append(entry.argsTemplate)
+        parts.append(entry.launchArguments.joined(separator: "\u{1F}"))
         switch entry.artworkStatus {
         case .cached(let url):
             parts.append("art:" + artworkSignature(url))

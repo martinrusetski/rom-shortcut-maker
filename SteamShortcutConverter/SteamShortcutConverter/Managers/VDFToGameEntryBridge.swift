@@ -46,7 +46,9 @@ final class VDFToGameEntryBridge {
 
         let detected = filter.detectEmulator(for: shortcut)
         let emulator: EmulatorChoice? = detected.map { .standalone($0) }
-        let argsTemplate = emulator.map { database.argsTemplate(for: $0) } ?? "\"{emulator}\" \"{rom}\""
+        let launchArguments = emulator.map {
+            database.launchArguments(for: $0, platform: platform)
+        } ?? ["{romPath}"]
 
         return GameEntry(
             title: title,
@@ -55,7 +57,7 @@ final class VDFToGameEntryBridge {
             platform: platform,
             emulator: emulator,
             emulatorPath: URL(fileURLWithPath: config.executablePath),
-            argsTemplate: argsTemplate,
+            launchArguments: launchArguments,
             artworkStatus: .none,
             source: .steamVDF
         )

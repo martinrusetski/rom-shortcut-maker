@@ -137,8 +137,8 @@ final class EmulatorConfigManagerTests: XCTestCase {
         let choices = manager.availableOptions(for: ps2).map { $0.choice }
         XCTAssertTrue(choices.contains(.standalone(.pcsx2)))
         XCTAssertTrue(choices.contains(.standalone(.armsx2)))
-        XCTAssertEqual(manager.resolve(.standalone(.pcsx2))?.emulatorPath, pcsx2)
-        XCTAssertEqual(manager.resolve(.standalone(.armsx2))?.emulatorPath, armsx2)
+        XCTAssertEqual(manager.resolve(.standalone(.pcsx2), for: ps2)?.emulatorPath, pcsx2)
+        XCTAssertEqual(manager.resolve(.standalone(.armsx2), for: ps2)?.emulatorPath, armsx2)
     }
 
     // MARK: - Default choice
@@ -178,10 +178,10 @@ final class EmulatorConfigManagerTests: XCTestCase {
             database: database, detector: makeStandardDetector(),
             store: InMemoryEmulatorConfigStore()
         )
-        let resolved = manager.resolve(.standalone(.snes9x))
+        let resolved = manager.resolve(.standalone(.snes9x), for: snes)
         XCTAssertEqual(resolved?.emulatorPath.lastPathComponent, "Snes9x.app")
         XCTAssertNil(resolved?.corePath)
-        XCTAssertFalse(resolved?.argsTemplate.contains("{core}") ?? true)
+        XCTAssertFalse(resolved?.launchArguments.contains("{corePath}") ?? true)
     }
 
     func testResolveRetroArchCore() {
@@ -189,10 +189,13 @@ final class EmulatorConfigManagerTests: XCTestCase {
             database: database, detector: makeStandardDetector(),
             store: InMemoryEmulatorConfigStore()
         )
-        let resolved = manager.resolve(.retroArchCore(core: "snes9x_libretro.dylib"))
+        let resolved = manager.resolve(
+            .retroArchCore(core: "snes9x_libretro.dylib"),
+            for: snes
+        )
         XCTAssertEqual(resolved?.emulatorPath.lastPathComponent, "RetroArch.app")
         XCTAssertEqual(resolved?.corePath?.lastPathComponent, "snes9x_libretro.dylib")
-        XCTAssertTrue(resolved?.argsTemplate.contains("{core}") ?? false)
+        XCTAssertTrue(resolved?.launchArguments.contains("{corePath}") ?? false)
     }
 
     func testResolveUnavailableReturnsNil() {
@@ -200,7 +203,7 @@ final class EmulatorConfigManagerTests: XCTestCase {
             database: database, detector: makeEmptyDetector(),
             store: InMemoryEmulatorConfigStore()
         )
-        XCTAssertNil(manager.resolve(.standalone(.snes9x)))
+        XCTAssertNil(manager.resolve(.standalone(.snes9x), for: snes))
     }
 
     // MARK: - Persistence

@@ -31,17 +31,20 @@ extension Bundle {
 struct EmulatorOption: Equatable, Hashable {
     let choice: EmulatorChoice      // .standalone(type) or .retroArchCore(core)
     let displayName: String         // "Snes9x" or "bsnes (RetroArch)"
+    let launchArguments: [String]   // Structured argument templates; executable is separate.
     let supportedExtensions: Set<String>?
     let supportsZIP: Bool
 
     init(
         choice: EmulatorChoice,
         displayName: String,
+        launchArguments: [String],
         supportedExtensions: Set<String>? = nil,
         supportsZIP: Bool = false
     ) {
         self.choice = choice
         self.displayName = displayName
+        self.launchArguments = launchArguments
         self.supportedExtensions = supportedExtensions
         self.supportsZIP = supportsZIP
     }
@@ -109,20 +112,21 @@ final class SystemDatabase {
         let emulator: String?
         let core: String?
         let displayName: String?
+        let launchArguments: [String]?
         let supportedExtensions: [String]?
         let supportsZip: Bool?
     }
 
     private struct EmulatorRecord: Decodable {
         let id: String
-        let argsTemplate: String
+        let defaultLaunchArguments: [String]
     }
 
     // MARK: Stored state
 
     private let platformRecords: [PlatformRecord]
     private let genericRomExtensions: [String]
-    private let emulatorTemplates: [String: String]   // emulator id -> args template
+    private let emulatorDefaultArguments: [String: [String]]
 
     /// Every emulator identifier referenced by the `emulators[]` block (exposed
     /// for drift testing).
@@ -154,11 +158,27 @@ final class SystemDatabase {
             guard EmulatorType(rawValue: record.id) != nil else {
                 throw DatabaseError.unknownEmulator(record.id)
             }
+            do {
+                try LaunchArguments.validate(record.defaultLaunchArguments)
+            } catch {
+                throw DatabaseError.malformedOption(
+                    "default launch arguments for \(record.id): \(error.localizedDescription)"
+                )
+            }
         }
 
         // Validate every platform option.
         for platform in root.platforms {
             for option in platform.emulatorOptions {
+                if let arguments = option.launchArguments {
+                    do {
+                        try LaunchArguments.validate(arguments)
+                    } catch {
+                        throw DatabaseError.malformedOption(
+                            "launch arguments in \(platform.id): \(error.localizedDescription)"
+                        )
+                    }
+                }
                 switch option.type {
                 case "standalone":
                     guard let emulator = option.emulator else {
@@ -179,11 +199,11 @@ final class SystemDatabase {
 
         self.platformRecords = root.platforms
         self.genericRomExtensions = root.genericRomExtensions ?? []
-        var templates: [String: String] = [:]
+        var defaultArguments: [String: [String]] = [:]
         for record in root.emulators {
-            templates[record.id] = record.argsTemplate
+            defaultArguments[record.id] = record.defaultLaunchArguments
         }
-        self.emulatorTemplates = templates
+        self.emulatorDefaultArguments = defaultArguments
         self.emulatorBlockIdentifiers = root.emulators.map { $0.id }
     }
 
@@ -257,6 +277,9 @@ final class SystemDatabase {
                 return EmulatorOption(
                     choice: .standalone(type),
                     displayName: option.displayName ?? emulator,
+                    launchArguments: option.launchArguments
+                        ?? emulatorDefaultArguments[type.rawValue]
+                        ?? ["{romPath}"],
                     supportedExtensions: normalizedSupportedExtensions(option.supportedExtensions),
                     supportsZIP: option.supportsZip ?? false
                 )
@@ -265,6 +288,9 @@ final class SystemDatabase {
                 return EmulatorOption(
                     choice: .retroArchCore(core: core),
                     displayName: option.displayName ?? core,
+                    launchArguments: option.launchArguments
+                        ?? emulatorDefaultArguments["RetroArch"]
+                        ?? ["-L", "{corePath}", "{romPath}"],
                     supportedExtensions: normalizedSupportedExtensions(option.supportedExtensions),
                     supportsZIP: option.supportsZip ?? false
                 )
@@ -279,14 +305,18 @@ final class SystemDatabase {
         return Set(extensions.map(normalizeExtension))
     }
 
-    /// The args template for a choice: the standalone emulator's template, or
-    /// RetroArch's `{core}` template for a core choice.
-    func argsTemplate(for choice: EmulatorChoice) -> String {
+    /// Resolve the curated launch profile for this exact platform/emulator pair.
+    /// Platform options override the emulator-wide default where launch syntax
+    /// depends on the emulated system (notably ares and MAME).
+    func launchArguments(for choice: EmulatorChoice, platform: Platform) -> [String] {
+        if let option = emulatorOptions(for: platform).first(where: { $0.choice == choice }) {
+            return option.launchArguments
+        }
         switch choice {
         case .standalone(let type):
-            return emulatorTemplates[type.rawValue] ?? "\"{emulator}\" \"{rom}\""
+            return emulatorDefaultArguments[type.rawValue] ?? ["{romPath}"]
         case .retroArchCore:
-            return emulatorTemplates["RetroArch"] ?? "\"{emulator}\" -L \"{core}\" \"{rom}\""
+            return emulatorDefaultArguments["RetroArch"] ?? ["-L", "{corePath}", "{romPath}"]
         }
     }
 

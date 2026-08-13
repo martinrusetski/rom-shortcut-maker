@@ -541,7 +541,7 @@ struct GameEntry: Identifiable, Codable, Equatable {
     var platform: Platform         // Resolved platform (see SystemDatabase)
     var emulator: EmulatorChoice?  // Assigned emulator choice (nil = unresolved)
     var emulatorPath: URL?         // Resolved executable path (RetroArch binary, for cores)
-    var argsTemplate: String       // Argument template (defaults from emulator DB)
+    var launchArguments: [String]  // Structured arguments from the platform/emulator profile
     var isSelected: Bool
     var artworkStatus: ArtworkStatus
     var source: GameSource
@@ -591,7 +591,7 @@ struct GameEntry: Identifiable, Codable, Equatable {
         platform: Platform,
         emulator: EmulatorChoice? = nil,
         emulatorPath: URL? = nil,
-        argsTemplate: String = "",
+        launchArguments: [String] = [],
         isSelected: Bool = true,
         artworkStatus: ArtworkStatus = .none,
         source: GameSource = .romScan,
@@ -607,7 +607,7 @@ struct GameEntry: Identifiable, Codable, Equatable {
         self.platform = platform
         self.emulator = emulator
         self.emulatorPath = emulatorPath
-        self.argsTemplate = argsTemplate
+        self.launchArguments = launchArguments
         self.isSelected = isSelected
         self.artworkStatus = artworkStatus
         self.source = source

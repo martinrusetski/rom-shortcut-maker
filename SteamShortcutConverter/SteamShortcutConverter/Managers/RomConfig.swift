@@ -16,7 +16,7 @@ import Foundation
 struct GameOverride: Codable, Equatable {
     var customTitle: String?
     var emulator: EmulatorChoice?
-    var args: String?
+    var launchArguments: [String]?
     var platform: String?      // platform id
     var imagePath: String?     // chosen launch image among alternates
     /// Whether the user un-checked this game's include box. Persisted so the

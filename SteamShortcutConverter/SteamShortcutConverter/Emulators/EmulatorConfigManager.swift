@@ -2,7 +2,7 @@
 //  EmulatorConfigManager.swift
 //  SteamShortcutConverter
 //
-//  Persists per-emulator config (path/args/enabled + RetroArch cores dir) and
+//  Persists per-emulator config (path/enabled + RetroArch cores dir) and
 //  per-platform default choices, and resolves which emulator options are
 //  actually runnable for a platform.
 //
@@ -14,13 +14,11 @@ import Foundation
 /// Per-emulator settings (a block of config.json v2's `emulators`).
 struct EmulatorSetting: Codable, Equatable {
     var path: String?
-    var args: String?
     var enabled: Bool
     var coresDir: String?     // RetroArch only
 
-    init(path: String? = nil, args: String? = nil, enabled: Bool = true, coresDir: String? = nil) {
+    init(path: String? = nil, enabled: Bool = true, coresDir: String? = nil) {
         self.path = path
-        self.args = args
         self.enabled = enabled
         self.coresDir = coresDir
     }
@@ -98,7 +96,7 @@ final class FileEmulatorConfigStore: EmulatorConfigStore {
 /// A fully resolved way to launch a ROM.
 struct ResolvedLaunch: Equatable {
     let emulatorPath: URL     // the emulator .app or CLI binary path
-    let argsTemplate: String  // template with {emulator}/{rom}/{core} placeholders
+    let launchArguments: [String]
     let corePath: URL?        // resolved RetroArch core .dylib (nil for standalone)
 }
 
@@ -164,6 +162,10 @@ final class EmulatorConfigManager {
                     options.append(EmulatorOption(
                         choice: .retroArchCore(core: core.filename),
                         displayName: core.displayName,
+                        launchArguments: database.launchArguments(
+                            for: .retroArchCore(core: core.filename),
+                            platform: platform
+                        ),
                         supportsZIP: database.supportsZIPLaunch(for: platform)
                     ))
                 }
@@ -202,23 +204,24 @@ final class EmulatorConfigManager {
     // MARK: Resolution
 
     /// Resolve a choice to concrete launch inputs, or nil if it isn't runnable.
-    func resolve(_ choice: EmulatorChoice) -> ResolvedLaunch? {
+    func resolve(_ choice: EmulatorChoice, for platform: Platform) -> ResolvedLaunch? {
         switch choice {
         case .standalone(let type):
             guard let path = emulatorPath(for: type) else { return nil }
-            let template = config.emulators[type.rawValue]?.args ?? database.argsTemplate(for: choice)
-            return ResolvedLaunch(emulatorPath: path, argsTemplate: template, corePath: nil)
+            return ResolvedLaunch(
+                emulatorPath: path,
+                launchArguments: database.launchArguments(for: choice, platform: platform),
+                corePath: nil
+            )
         case .retroArchCore(let core):
             guard let path = emulatorPath(for: .retroArch) else { return nil }
-            let template = config.emulators[EmulatorType.retroArch.rawValue]?.args
-                ?? database.argsTemplate(for: choice)
             // Prefer the core's actual on-disk location (cores usually live in
             // Application Support, not the .app bundle).
             let corePath = installedCores.first(where: { $0.filename == core })?.url
                 ?? coresDirectory().appendingPathComponent(core)
             return ResolvedLaunch(
                 emulatorPath: path,
-                argsTemplate: template,
+                launchArguments: database.launchArguments(for: choice, platform: platform),
                 corePath: corePath
             )
         }
@@ -236,13 +239,6 @@ final class EmulatorConfigManager {
     func setPath(_ path: String?, for type: EmulatorType) {
         var setting = config.emulators[type.rawValue] ?? EmulatorSetting()
         setting.path = path
-        config.emulators[type.rawValue] = setting
-        persist()
-    }
-
-    func setArgs(_ args: String?, for type: EmulatorType) {
-        var setting = config.emulators[type.rawValue] ?? EmulatorSetting()
-        setting.args = args
         config.emulators[type.rawValue] = setting
         persist()
     }

@@ -175,19 +175,49 @@ final class SystemDatabaseTests: XCTestCase {
         }
     }
 
-    // MARK: - Args templates
+    // MARK: - Launch profiles
 
-    func testRetroArchTemplateContainsCorePlaceholder() {
-        let template = database.argsTemplate(for: .retroArchCore(core: "snes9x_libretro.dylib"))
-        XCTAssertTrue(template.contains("{core}"))
-        XCTAssertTrue(template.contains("{rom}"))
+    func testRetroArchProfileContainsCorePlaceholder() {
+        let arguments = database.launchArguments(
+            for: .retroArchCore(core: "snes9x_libretro.dylib"),
+            platform: Platform(id: "snes", displayName: "SNES")
+        )
+        XCTAssertTrue(arguments.contains("{corePath}"))
+        XCTAssertTrue(arguments.contains("{romPath}"))
     }
 
-    func testStandaloneTemplateHasNoCorePlaceholder() {
-        let template = database.argsTemplate(for: .standalone(.snes9x))
-        XCTAssertFalse(template.contains("{core}"))
-        XCTAssertTrue(template.contains("{emulator}"))
-        XCTAssertTrue(template.contains("{rom}"))
+    func testStandaloneProfileHasNoExecutableOrCorePlaceholder() {
+        let arguments = database.launchArguments(
+            for: .standalone(.snes9x),
+            platform: Platform(id: "snes", displayName: "SNES")
+        )
+        XCTAssertFalse(arguments.contains("{corePath}"))
+        XCTAssertFalse(arguments.contains("{emulator}"))
+        XCTAssertTrue(arguments.contains("{romPath}"))
+    }
+
+    func testPlatformSpecificProfilesOverrideEmulatorDefaults() {
+        XCTAssertEqual(
+            database.launchArguments(
+                for: .standalone(.dolphin),
+                platform: Platform(id: "gamecube", displayName: "GameCube")
+            ),
+            ["-b", "-e", "{romPath}"]
+        )
+        XCTAssertEqual(
+            database.launchArguments(
+                for: .standalone(.mame),
+                platform: Platform(id: "arcade", displayName: "Arcade")
+            ),
+            ["-rompath", "{romDirectory}", "{romStem}"]
+        )
+        XCTAssertEqual(
+            database.launchArguments(
+                for: .standalone(.ares),
+                platform: Platform(id: "n64", displayName: "Nintendo 64")
+            ),
+            ["--fullscreen", "--system", "Nintendo 64", "{romPath}"]
+        )
     }
 
     // MARK: - Extension set

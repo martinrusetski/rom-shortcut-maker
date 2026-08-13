@@ -647,35 +647,62 @@ final class MainViewModelTests: XCTestCase {
         }
     }
 
-    // MARK: - Args override round-trip
+    // MARK: - Launch argument override round-trip
 
-    func testSetArgsTemplatePersistsAndResets() async {
+    func testSetCustomLaunchArgumentsPersistsAndResets() async throws {
         let vm = makeViewModel(roms: [snesROM("/ROMs/SNES/Zelda.sfc")])
         await vm.scan()
         let game = vm.games[0]
-        let original = game.argsTemplate
+        let original = game.launchArguments
 
-        vm.setArgsTemplate("{emulator} --fullscreen {rom}", for: game)
-        XCTAssertEqual(vm.games[0].argsTemplate, "{emulator} --fullscreen {rom}")
-        XCTAssertEqual(vm.currentConfiguration.gameOverrides[game.stableKey]?.args,
-                       "{emulator} --fullscreen {rom}")
-        XCTAssertTrue(vm.hasOverride(.args, for: vm.games[0]))
+        try vm.setCustomLaunchArguments("--fullscreen {romPath}", for: game)
+        XCTAssertEqual(vm.games[0].launchArguments, ["--fullscreen", "{romPath}"])
+        XCTAssertEqual(
+            vm.currentConfiguration.gameOverrides[game.stableKey]?.launchArguments,
+            ["--fullscreen", "{romPath}"]
+        )
+        XCTAssertTrue(vm.hasOverride(.launchArguments, for: vm.games[0]))
 
         // Reset restores the emulator default and drops the override.
-        vm.resetOverride(.args, for: vm.games[0])
-        XCTAssertEqual(vm.games[0].argsTemplate, original)
-        XCTAssertFalse(vm.hasOverride(.args, for: vm.games[0]))
-        XCTAssertNil(vm.currentConfiguration.gameOverrides[game.stableKey]?.args)
+        vm.resetOverride(.launchArguments, for: vm.games[0])
+        XCTAssertEqual(vm.games[0].launchArguments, original)
+        XCTAssertFalse(vm.hasOverride(.launchArguments, for: vm.games[0]))
+        XCTAssertNil(vm.currentConfiguration.gameOverrides[game.stableKey]?.launchArguments)
     }
 
-    func testSetArgsTemplateEmptyClearsOverride() async {
+    func testEmptyCustomLaunchArgumentsClearsOverride() async throws {
         let vm = makeViewModel(roms: [snesROM("/ROMs/SNES/Zelda.sfc")])
         await vm.scan()
         let game = vm.games[0]
-        vm.setArgsTemplate("{emulator} {rom}", for: game)
-        XCTAssertTrue(vm.hasOverride(.args, for: vm.games[0]))
-        vm.setArgsTemplate("", for: vm.games[0])
-        XCTAssertFalse(vm.hasOverride(.args, for: vm.games[0]))
+        try vm.setCustomLaunchArguments("{romPath}", for: game)
+        XCTAssertTrue(vm.hasOverride(.launchArguments, for: vm.games[0]))
+        try vm.setCustomLaunchArguments("", for: vm.games[0])
+        XCTAssertFalse(vm.hasOverride(.launchArguments, for: vm.games[0]))
+    }
+
+    func testChangingEmulatorClearsCustomArgumentsAndUsesNewProfile() async throws {
+        let vm = makeViewModel(roms: [snesROM("/ROMs/SNES/Zelda.sfc")])
+        await vm.scan()
+        let game = vm.games[0]
+        try vm.setCustomLaunchArguments("--custom {romPath}", for: game)
+
+        vm.setEmulatorChoice(.standalone(.bsnes), for: vm.games[0])
+
+        XCTAssertEqual(vm.games[0].launchArguments, ["--fullscreen", "{romPath}"])
+        XCTAssertNil(vm.currentConfiguration.gameOverrides[game.stableKey]?.launchArguments)
+        XCTAssertFalse(vm.hasOverride(.launchArguments, for: vm.games[0]))
+    }
+
+    func testUnknownLaunchPlaceholderDoesNotMutateGame() async {
+        let vm = makeViewModel(roms: [snesROM("/ROMs/SNES/Zelda.sfc")])
+        await vm.scan()
+        let original = vm.games[0].launchArguments
+
+        XCTAssertThrowsError(
+            try vm.setCustomLaunchArguments("--custom {rom}", for: vm.games[0])
+        )
+        XCTAssertEqual(vm.games[0].launchArguments, original)
+        XCTAssertFalse(vm.hasOverride(.launchArguments, for: vm.games[0]))
     }
 
     // MARK: - Custom artwork override
@@ -810,14 +837,14 @@ final class MainViewModelTests: XCTestCase {
 
     // MARK: - Reset all overrides
 
-    func testResetOverridesRestoresDefaults() async {
+    func testResetOverridesRestoresDefaults() async throws {
         let vm = makeViewModel(roms: [snesROM("/ROMs/SNES/Zelda.sfc")])
         await vm.scan()
         let game = vm.games[0]
         let defaultTitle = game.title
 
         vm.setTitle("Custom", for: game)
-        vm.setArgsTemplate("{emulator} --x {rom}", for: vm.games[0])
+        try vm.setCustomLaunchArguments("--x {romPath}", for: vm.games[0])
         XCTAssertTrue(vm.anyOverrides(vm.games[0]))
 
         vm.resetOverrides(for: vm.games[0])

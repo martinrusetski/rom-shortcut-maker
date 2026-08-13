@@ -22,7 +22,8 @@
       "libretroSystems": ["super_nes"],
       "emulatorOptions": [
         { "type": "standalone", "emulator": "Snes9x", "supportsZip": true },
-        { "type": "standalone", "emulator": "bsnes" }
+        { "type": "standalone", "emulator": "bsnes",
+          "launchArguments": ["--fullscreen", "{romPath}"] }
       ]
     },
     {
@@ -44,7 +45,8 @@
       "supportsSingleFileZip": true,
       "libretroSystems": ["game_boy_advance"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "mGBA", "supportsZip": true },
+        { "type": "standalone", "emulator": "mGBA", "supportsZip": true,
+          "launchArguments": ["-f", "{romPath}"] },
         { "type": "standalone", "emulator": "NanoBoyAdvance" }
       ]
     },
@@ -56,8 +58,10 @@
       "supportsSingleFileZip": true,
       "libretroSystems": ["nintendo_64"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "ares", "supportsZip": true },
-        { "type": "standalone", "emulator": "Mupen64Plus" }
+        { "type": "standalone", "emulator": "ares", "supportsZip": true,
+          "launchArguments": ["--fullscreen", "--system", "Nintendo 64", "{romPath}"] },
+        { "type": "standalone", "emulator": "Mupen64Plus",
+          "launchArguments": ["--fullscreen", "{romPath}"] }
       ]
     },
     {
@@ -78,7 +82,8 @@
       "romExtensions": [".3ds", ".cia", ".cci", ".cxi", ".3dsx"],
       "libretroSystems": ["3ds"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "Azahar" },
+        { "type": "standalone", "emulator": "Azahar",
+          "launchArguments": ["-f", "{romPath}"] },
         { "type": "standalone", "emulator": "Lime3DS" }
       ]
     },
@@ -89,7 +94,8 @@
       "romExtensions": [".iso", ".gcm", ".rvz", ".ciso", ".gcz"],
       "libretroSystems": ["gamecube"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "Dolphin" }
+        { "type": "standalone", "emulator": "Dolphin",
+          "launchArguments": ["-b", "-e", "{romPath}"] }
       ]
     },
     {
@@ -99,7 +105,8 @@
       "romExtensions": [".iso", ".wbfs", ".rvz", ".wad", ".gcz"],
       "libretroSystems": ["gamecube"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "Dolphin" }
+        { "type": "standalone", "emulator": "Dolphin",
+          "launchArguments": ["-b", "-e", "{romPath}"] }
       ]
     },
     {
@@ -111,6 +118,7 @@
       "libretroSystems": ["playstation"],
       "emulatorOptions": [
         { "type": "standalone", "emulator": "DuckStation",
+          "launchArguments": ["-batch", "-fullscreen", "{romPath}"],
           "supportedExtensions": [".cue", ".chd", ".bin", ".m3u", ".pbp", ".ecm", ".ccd", ".mds"] }
       ]
     },
@@ -123,6 +131,7 @@
       "libretroSystems": ["playstation2"],
       "emulatorOptions": [
         { "type": "standalone", "emulator": "PCSX2",
+          "launchArguments": ["{romPath}", "-batch", "-fullscreen", "-nogui"],
           "supportedExtensions": [".iso", ".chd", ".cso", ".bin", ".m3u", ".mds"] },
         { "type": "standalone", "emulator": "ARMSX2",
           "supportedExtensions": [".iso", ".chd", ".cso", ".bin", ".m3u", ".mds"] },
@@ -140,6 +149,7 @@
       "libretroSystems": ["playstation_portable"],
       "emulatorOptions": [
         { "type": "standalone", "emulator": "PPSSPP",
+          "launchArguments": ["--fullscreen", "{romPath}"],
           "supportedExtensions": [".iso", ".cso", ".chd", ".pbp", ".m3u"] }
       ]
     },
@@ -150,7 +160,8 @@
       "romExtensions": [".iso", ".pkg"],
       "libretroSystems": [],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "RPCS3" }
+        { "type": "standalone", "emulator": "RPCS3",
+          "launchArguments": ["--no-gui", "{romPath}"] }
       ]
     },
     {
@@ -161,7 +172,8 @@
       "supportsSingleFileZip": true,
       "libretroSystems": ["mega_drive"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "ares", "supportsZip": true }
+        { "type": "standalone", "emulator": "ares", "supportsZip": true,
+          "launchArguments": ["--fullscreen", "--system", "Mega Drive", "{romPath}"] }
       ]
     },
     {
@@ -185,6 +197,7 @@
       "libretroSystems": ["dreamcast"],
       "emulatorOptions": [
         { "type": "standalone", "emulator": "Flycast",
+          "launchArguments": ["-config", "window:fullscreen=yes", "{romPath}"],
           "supportedExtensions": [".cdi", ".chd", ".gdi", ".cue", ".m3u", ".ccd"] },
         { "type": "standalone", "emulator": "Redream",
           "supportedExtensions": [".cdi", ".chd", ".gdi", ".cue"] }
@@ -199,6 +212,7 @@
       "libretroSystems": ["arcade", "mame", "fb_alpha", "neogeo", "hbmame"],
       "emulatorOptions": [
         { "type": "standalone", "emulator": "MAME", "supportsZip": true,
+          "launchArguments": ["-rompath", "{romDirectory}", "{romStem}"],
           "supportedExtensions": [".zip", ".chd"] }
       ]
     },
@@ -209,7 +223,8 @@
       "romExtensions": [".zip"],
       "libretroSystems": [],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "MAME", "supportsZip": true }
+        { "type": "standalone", "emulator": "MAME", "supportsZip": true,
+          "launchArguments": ["-rompath", "{romDirectory}", "{romStem}"] }
       ]
     },
     {
@@ -229,7 +244,8 @@
       "romExtensions": [".wua", ".wud", ".wux", ".rpx"],
       "libretroSystems": [],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "Cemu" }
+        { "type": "standalone", "emulator": "Cemu",
+          "launchArguments": ["-f", "-g", "{romPath}"] }
       ]
     },
     {
@@ -239,7 +255,8 @@
       "romExtensions": [".nsp", ".xci", ".nro", ".nca"],
       "libretroSystems": [],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "Ryujinx" }
+        { "type": "standalone", "emulator": "Ryujinx",
+          "launchArguments": ["--fullscreen", "{romPath}"] }
       ]
     },
     {
@@ -282,7 +299,8 @@
       "supportsSingleFileZip": true,
       "libretroSystems": ["msx"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "ares", "supportsZip": true }
+        { "type": "standalone", "emulator": "ares", "supportsZip": true,
+          "launchArguments": ["--fullscreen", "--system", "MSX", "{romPath}"] }
       ]
     },
     {
@@ -315,7 +333,8 @@
       "libretroSystems": ["atari_2600"],
       "emulatorOptions": [
         { "type": "standalone", "emulator": "Stella", "supportsZip": true },
-        { "type": "standalone", "emulator": "ares", "supportsZip": true }
+        { "type": "standalone", "emulator": "ares", "supportsZip": true,
+          "launchArguments": ["--fullscreen", "--system", "Atari 2600", "{romPath}"] }
       ]
     },
     {
@@ -346,7 +365,8 @@
       "libretroSystems": ["pc_engine"],
       "emulatorOptions": [
         { "type": "standalone", "emulator": "Mednafen", "supportsZip": true },
-        { "type": "standalone", "emulator": "ares", "supportsZip": true },
+        { "type": "standalone", "emulator": "ares", "supportsZip": true,
+          "launchArguments": ["--fullscreen", "--system", "PC Engine", "{romPath}"] },
         { "type": "standalone", "emulator": "Geargrafx" }
       ]
     },
@@ -370,7 +390,8 @@
       "supportsSingleFileZip": true,
       "libretroSystems": ["master_system"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "ares", "supportsZip": true },
+        { "type": "standalone", "emulator": "ares", "supportsZip": true,
+          "launchArguments": ["--fullscreen", "--system", "Master System", "{romPath}"] },
         { "type": "standalone", "emulator": "Gearsystem" },
         { "type": "standalone", "emulator": "Mednafen", "supportsZip": true }
       ]
@@ -383,7 +404,8 @@
       "supportsSingleFileZip": true,
       "libretroSystems": ["game_gear", "master_system"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "ares", "supportsZip": true },
+        { "type": "standalone", "emulator": "ares", "supportsZip": true,
+          "launchArguments": ["--fullscreen", "--system", "Game Gear", "{romPath}"] },
         { "type": "standalone", "emulator": "Gearsystem" }
       ]
     },
@@ -396,7 +418,8 @@
       "libretroSystems": ["wonderswan"],
       "emulatorOptions": [
         { "type": "standalone", "emulator": "Mednafen", "supportsZip": true },
-        { "type": "standalone", "emulator": "ares", "supportsZip": true }
+        { "type": "standalone", "emulator": "ares", "supportsZip": true,
+          "launchArguments": ["--fullscreen", "--system", "WonderSwan", "{romPath}"] }
       ]
     },
     {
@@ -407,7 +430,8 @@
       "supportsSingleFileZip": true,
       "libretroSystems": ["colecovision"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "ares", "supportsZip": true },
+        { "type": "standalone", "emulator": "ares", "supportsZip": true,
+          "launchArguments": ["--fullscreen", "--system", "ColecoVision", "{romPath}"] },
         { "type": "standalone", "emulator": "Gearcoleco" }
       ]
     },
@@ -434,44 +458,44 @@
     }
   ],
   "emulators": [
-    { "id": "Mesen",          "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "Snes9x",         "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "bsnes",          "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "SameBoy",        "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "mGBA",           "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "NanoBoyAdvance", "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "ares",           "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "Mupen64Plus",    "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "melonDS",        "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "DeSmuME",        "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "Azahar",         "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "Lime3DS",        "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "Dolphin",        "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "DuckStation",    "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "ARMSX2",         "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "PCSX2",          "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "Play!",          "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "PPSSPP",         "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "RPCS3",          "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "Mednafen",       "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "Flycast",        "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "Redream",        "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "MAME",           "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "DOSBox",         "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "Cemu",           "argsTemplate": "\"{emulator}\" -g \"{rom}\"" },
-    { "id": "Ryujinx",        "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "VICE",            "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "FS-UAE",          "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "vAmiga",          "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "FUSE",            "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "Spectral",        "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "Neko Project II", "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "NP2kai",          "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "XM6",             "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "Stella",          "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "Geargrafx",       "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "Gearsystem",      "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "Gearcoleco",      "argsTemplate": "\"{emulator}\" \"{rom}\"" },
-    { "id": "RetroArch",      "argsTemplate": "\"{emulator}\" -L \"{core}\" \"{rom}\"" }
+    { "id": "Mesen",          "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "Snes9x",         "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "bsnes",          "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "SameBoy",        "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "mGBA",           "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "NanoBoyAdvance", "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "ares",           "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "Mupen64Plus",    "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "melonDS",        "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "DeSmuME",        "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "Azahar",         "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "Lime3DS",        "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "Dolphin",        "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "DuckStation",    "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "ARMSX2",         "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "PCSX2",          "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "Play!",          "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "PPSSPP",         "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "RPCS3",          "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "Mednafen",       "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "Flycast",        "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "Redream",        "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "MAME",           "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "DOSBox",         "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "Cemu",           "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "Ryujinx",        "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "VICE",           "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "FS-UAE",         "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "vAmiga",         "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "FUSE",           "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "Spectral",       "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "Neko Project II", "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "NP2kai",         "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "XM6",            "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "Stella",         "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "Geargrafx",      "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "Gearsystem",     "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "Gearcoleco",     "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "RetroArch",      "defaultLaunchArguments": ["-L", "{corePath}", "{romPath}"] }
   ]
 }

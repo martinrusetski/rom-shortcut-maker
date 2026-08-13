@@ -458,9 +458,9 @@ class DefaultAppBundleGenerator: AppBundleGenerator {
         )
 
         // Build the launch command ONCE from structured pieces (single escaping).
-        let command = buildLaunchCommand(
+        let command = try buildLaunchCommand(
             emulator: game.executablePath,
-            argsTemplate: game.argsTemplate,
+            launchArguments: game.launchArguments,
             rom: game.romPath,
             core: game.corePath
         )
@@ -509,8 +509,8 @@ class DefaultAppBundleGenerator: AppBundleGenerator {
         return url.appendingPathComponent("Contents/MacOS/\(fallback)")
     }
 
-    /// Expand `{emulator}`/`{rom}`/`{core}` in the args template and produce a
-    /// single, correctly shell-quoted command line.
+    /// Resolve placeholders in structured arguments and produce a single,
+    /// correctly shell-quoted command line.
     ///
     /// `.app` emulators are launched via LaunchServices (`open -a`), NOT by
     /// exec'ing their inner Mach-O directly. Exec'ing the inner binary runs the
@@ -519,37 +519,27 @@ class DefaultAppBundleGenerator: AppBundleGenerator {
     /// emulators (RetroArch) then hit "terminate after last window closed" and
     /// quit instantly on launch. `open -a` gives the emulator its own identity.
     /// CLI binaries have no such identity and are exec'd directly.
-    func buildLaunchCommand(emulator: URL, argsTemplate: String, rom: URL, core: URL?) -> String {
-        let tokens = Self.tokenizeTemplate(argsTemplate)
-
-        func substituteData(_ token: String) -> String {
-            var value = token
-            value = value.replacingOccurrences(of: "{rom}", with: rom.path)
-            if let core {
-                value = value.replacingOccurrences(of: "{core}", with: core.path)
-            }
-            return value
-        }
+    func buildLaunchCommand(
+        emulator: URL,
+        launchArguments: [String],
+        rom: URL,
+        core: URL?
+    ) throws -> String {
+        let resolvedArguments = try LaunchArguments.resolve(launchArguments, rom: rom, core: core)
 
         if emulator.pathExtension.lowercased() == "app" {
-            // Drop the {emulator} placeholder; remaining tokens are the app's args.
-            let argTokens = tokens
-                .filter { $0 != "{emulator}" }
-                .map(substituteData)
             var parts = ["/usr/bin/open", "-a", emulator.path]
-            if !argTokens.isEmpty {
+            if !resolvedArguments.isEmpty {
                 parts.append("--args")
-                parts.append(contentsOf: argTokens)
+                parts.append(contentsOf: resolvedArguments)
             }
             return parts.map { Self.shellQuote($0) }.joined(separator: " ")
         }
 
-        // CLI binary: expand {emulator} in place and exec directly.
         let executable = resolveExecutable(emulator)
-        let substituted = tokens.map { token -> String in
-            substituteData(token.replacingOccurrences(of: "{emulator}", with: executable.path))
-        }
-        return substituted.map { Self.shellQuote($0) }.joined(separator: " ")
+        return ([executable.path] + resolvedArguments)
+            .map { Self.shellQuote($0) }
+            .joined(separator: " ")
     }
 
     // MARK: - Static helpers
@@ -559,35 +549,6 @@ class DefaultAppBundleGenerator: AppBundleGenerator {
     /// `$`, backticks, and double quotes with no second escaping pass.
     static func shellQuote(_ string: String) -> String {
         "'" + string.replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
-
-    /// Split an args template into argument tokens, consuming quotes used purely
-    /// for grouping (they are re-applied by `shellQuote`).
-    static func tokenizeTemplate(_ template: String) -> [String] {
-        var tokens: [String] = []
-        var current = ""
-        var hasContent = false
-        var inSingle = false
-        var inDouble = false
-
-        for character in template {
-            if character == "'" && !inDouble {
-                inSingle.toggle()
-                hasContent = true
-            } else if character == "\"" && !inSingle {
-                inDouble.toggle()
-                hasContent = true
-            } else if character.isWhitespace && !inSingle && !inDouble {
-                if hasContent { tokens.append(current) }
-                current = ""
-                hasContent = false
-            } else {
-                current.append(character)
-                hasContent = true
-            }
-        }
-        if hasContent { tokens.append(current) }
-        return tokens
     }
 
     /// Sanitize a title into a bundle-identifier component (lowercase, hyphenated,
@@ -633,7 +594,7 @@ struct ResolvedGameBundle {
     let displayName: String
     let version: String
     let executablePath: URL     // emulator (.app bundle or CLI binary)
-    let argsTemplate: String
+    let launchArguments: [String]
     let romPath: URL
     let corePath: URL?          // RetroArch core .dylib (nil for standalone)
     let iconICNS: URL?          // pre-converted .icns to copy
@@ -646,7 +607,7 @@ struct ResolvedGameBundle {
         displayName: String,
         version: String = "1.0",
         executablePath: URL,
-        argsTemplate: String,
+        launchArguments: [String],
         romPath: URL,
         corePath: URL? = nil,
         iconICNS: URL? = nil,
@@ -658,7 +619,7 @@ struct ResolvedGameBundle {
         self.displayName = displayName
         self.version = version
         self.executablePath = executablePath
-        self.argsTemplate = argsTemplate
+        self.launchArguments = launchArguments
         self.romPath = romPath
         self.corePath = corePath
         self.iconICNS = iconICNS

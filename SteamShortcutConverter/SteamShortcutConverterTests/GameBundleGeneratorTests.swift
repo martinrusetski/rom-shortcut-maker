@@ -29,22 +29,21 @@ final class GameBundleGeneratorTests: XCTestCase {
 
     // MARK: - Template expansion
 
-    func testStandaloneTemplateExpansion() {
-        // Non-.app CLI binary: exec'd directly with {emulator} expanded in place.
-        let command = generator.buildLaunchCommand(
+    func testStandaloneArgumentExpansion() throws {
+        let command = try generator.buildLaunchCommand(
             emulator: URL(fileURLWithPath: "/Applications/Snes9x/bin/snes9x"),
-            argsTemplate: "\"{emulator}\" \"{rom}\"",
+            launchArguments: ["{romPath}"],
             rom: URL(fileURLWithPath: "/ROMs/game.sfc"),
             core: nil
         )
         XCTAssertEqual(command, "'/Applications/Snes9x/bin/snes9x' '/ROMs/game.sfc'")
     }
 
-    func testRetroArchTemplateExpansion() {
+    func testRetroArchArgumentExpansion() throws {
         // Non-.app CLI binary path keeps the direct-exec form.
-        let command = generator.buildLaunchCommand(
+        let command = try generator.buildLaunchCommand(
             emulator: URL(fileURLWithPath: "/Applications/RetroArch/bin/retroarch"),
-            argsTemplate: "\"{emulator}\" -L \"{core}\" \"{rom}\"",
+            launchArguments: ["-L", "{corePath}", "{romPath}"],
             rom: URL(fileURLWithPath: "/ROMs/game.sfc"),
             core: URL(fileURLWithPath: "/cores/snes9x_libretro.dylib")
         )
@@ -56,12 +55,12 @@ final class GameBundleGeneratorTests: XCTestCase {
 
     // MARK: - .app emulators launch via LaunchServices (open -a)
 
-    func testAppBundleLaunchesViaOpen() {
+    func testAppBundleLaunchesViaOpen() throws {
         // A real .app emulator must be launched through `open -a` so it gets its
         // own app identity, not by exec'ing the inner Mach-O from our bundle.
-        let command = generator.buildLaunchCommand(
+        let command = try generator.buildLaunchCommand(
             emulator: URL(fileURLWithPath: "/Applications/RetroArch.app"),
-            argsTemplate: "\"{emulator}\" -L \"{core}\" \"{rom}\"",
+            launchArguments: ["-L", "{corePath}", "{romPath}"],
             rom: URL(fileURLWithPath: "/ROMs/Crazy Taxi 2.chd"),
             core: URL(fileURLWithPath: "/cores/flycast_libretro.dylib")
         )
@@ -71,11 +70,10 @@ final class GameBundleGeneratorTests: XCTestCase {
         )
     }
 
-    func testAppBundleWithBarePositionalRom() {
-        // Cemu-style template ("{emulator}" -g "{rom}") through open -a.
-        let command = generator.buildLaunchCommand(
+    func testAppBundleWithBarePositionalRom() throws {
+        let command = try generator.buildLaunchCommand(
             emulator: URL(fileURLWithPath: "/Applications/Cemu.app"),
-            argsTemplate: "\"{emulator}\" -g \"{rom}\"",
+            launchArguments: ["-g", "{romPath}"],
             rom: URL(fileURLWithPath: "/ROMs/BOTW.wua"),
             core: nil
         )
@@ -123,7 +121,7 @@ final class GameBundleGeneratorTests: XCTestCase {
             bundleIdentifier: "com.romshortcutmaker.chrono-trigger",
             displayName: "Chrono Trigger",
             executablePath: URL(fileURLWithPath: "/Applications/Snes9x/bin/snes9x"),
-            argsTemplate: "\"{emulator}\" \"{rom}\"",
+            launchArguments: ["{romPath}"],
             romPath: URL(fileURLWithPath: "/ROMs/Chrono Trigger.sfc"),
             outputDirectory: tempDirectory
         )

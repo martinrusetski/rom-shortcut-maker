@@ -3,7 +3,7 @@
 //  SteamShortcutConverter
 //
 //  A focused Get Info-style editor. Common changes stay visible; diagnostics
-//  and command-template editing live under Advanced.
+//  and launch-argument editing live under Advanced.
 //
 
 import SwiftUI
@@ -388,25 +388,62 @@ private struct AdvancedSection: View {
 
     @State private var isExpanded = false
     @State private var argsText = ""
+    @State private var argumentError: String?
+    @FocusState private var argumentsFocused: Bool
 
     var body: some View {
         Section {
             DisclosureGroup("Advanced", isExpanded: $isExpanded) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 6) {
-                        Text("Command template")
+                        Text("Custom arguments")
                         Image(systemName: "questionmark.circle")
                             .foregroundColor(.secondary)
-                            .help("Use {emulator} for the executable, {rom} for the game file, and {core} for a RetroArch core.")
+                            .help("The executable is selected separately. Supported placeholders: \(LaunchArguments.supportedPlaceholders.joined(separator: ", ")).")
                         Spacer()
-                        RevertButton(isVisible: viewModel.hasOverride(.args, for: game)) {
-                            viewModel.resetOverride(.args, for: game)
+                        RevertButton(isVisible: viewModel.hasOverride(.launchArguments, for: game)) {
+                            viewModel.resetOverride(.launchArguments, for: game)
+                            if let updated = viewModel.game(id: game.id) {
+                                argsText = viewModel.launchArgumentsText(for: updated)
+                            }
+                            argumentError = nil
                         }
                     }
-                    TextField("Command template", text: $argsText)
+                    TextField("Arguments", text: $argsText)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(.body, design: .monospaced))
-                        .onSubmit { viewModel.setArgsTemplate(argsText, for: game) }
+                        .focused($argumentsFocused)
+                        .onSubmit { commitArguments() }
+
+                    if let argumentError {
+                        Text(argumentError)
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    } else {
+                        Text("Profile: \(viewModel.emulatorDisplayName(for: game) ?? "No emulator")")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    LabeledContent("Resolved command") {
+                        Text(viewModel.resolvedLaunchPreview(for: game))
+                            .font(.system(.caption, design: .monospaced))
+                            .lineLimit(3)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                    }
+
+                    HStack {
+                        Spacer()
+                        Button("Test Launch") {
+                            commitArguments()
+                            if argumentError == nil,
+                               let updated = viewModel.game(id: game.id) {
+                                viewModel.testLaunch(updated)
+                            }
+                        }
+                        .disabled(game.emulator == nil)
+                    }
 
                     if let detection = viewModel.detectionInfo(for: game) {
                         Divider()
@@ -416,8 +453,28 @@ private struct AdvancedSection: View {
                 .padding(.top, 6)
             }
         }
-        .task(id: game.id) { argsText = game.argsTemplate }
-        .onChange(of: game.argsTemplate) { argsText = $0 }
+        .task(id: game.id) { argsText = viewModel.launchArgumentsText(for: game) }
+        .onChange(of: game.launchArguments) { _, _ in
+            if !argumentsFocused {
+                argsText = viewModel.launchArgumentsText(for: game)
+            }
+        }
+        .onChange(of: argumentsFocused) { _, focused in
+            if !focused { commitArguments() }
+        }
+        .onDisappear { commitArguments() }
+    }
+
+    private func commitArguments() {
+        do {
+            try viewModel.setCustomLaunchArguments(argsText, for: game)
+            argumentError = nil
+            if let updated = viewModel.game(id: game.id) {
+                argsText = viewModel.launchArgumentsText(for: updated)
+            }
+        } catch {
+            argumentError = error.localizedDescription
+        }
     }
 }
 

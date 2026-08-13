@@ -17,7 +17,7 @@ final class MainViewModel: ObservableObject {
     /// A per-game field that can be individually overridden (and reset). Backs
     /// the Properties window's override dots and per-field reset buttons.
     enum OverrideField: CaseIterable {
-        case title, platform, emulator, args, launchImage
+        case title, platform, emulator, launchArguments, launchImage
     }
 
     enum SourceMode: String {
@@ -369,12 +369,12 @@ final class MainViewModel: ObservableObject {
 
     private func assignEmulator(_ entry: inout GameEntry, choice: EmulatorChoice) {
         entry.emulator = choice
-        if let resolved = emulatorConfig.resolve(choice) {
+        if let resolved = emulatorConfig.resolve(choice, for: entry.platform) {
             entry.emulatorPath = resolved.emulatorPath
-            entry.argsTemplate = resolved.argsTemplate
+            entry.launchArguments = resolved.launchArguments
         } else {
             entry.emulatorPath = nil
-            entry.argsTemplate = database.argsTemplate(for: choice)
+            entry.launchArguments = database.launchArguments(for: choice, platform: entry.platform)
         }
     }
 
@@ -385,9 +385,19 @@ final class MainViewModel: ObservableObject {
             if let platformId = override.platform,
                let platform = database.allPlatforms.first(where: { $0.id == platformId }) {
                 games[index].platform = platform
+                if let choice = emulatorConfig.defaultChoice(
+                    for: platform,
+                    romExtension: games[index].launchPath.pathExtension
+                ) {
+                    assignEmulator(&games[index], choice: choice)
+                } else {
+                    clearEmulator(&games[index])
+                }
             }
             if let choice = override.emulator { assignEmulator(&games[index], choice: choice) }
-            if let args = override.args { games[index].argsTemplate = args }
+            if let launchArguments = override.launchArguments {
+                games[index].launchArguments = launchArguments
+            }
             if let imagePath = override.imagePath {
                 games[index].launchImage = URL(fileURLWithPath: imagePath)
             }
@@ -491,12 +501,19 @@ final class MainViewModel: ObservableObject {
 
     func setEmulatorChoice(_ choice: EmulatorChoice, for game: GameEntry) {
         updateGame(game.id) { self.assignEmulator(&$0, choice: choice) }
-        updateOverride(game.stableKey) { $0.emulator = choice }
+        updateOverride(game.stableKey) {
+            $0.emulator = choice
+            $0.launchArguments = nil
+        }
     }
 
     func setPlatform(_ platform: Platform, for game: GameEntry) {
         applyPlatform(platform, toGameID: game.id)
-        updateOverride(game.stableKey) { $0.platform = platform.id }
+        updateOverride(game.stableKey) {
+            $0.platform = platform.id
+            $0.emulator = nil
+            $0.launchArguments = nil
+        }
     }
 
     /// Assign a platform override to several games, used by the Unknown bucket's
@@ -505,7 +522,11 @@ final class MainViewModel: ObservableObject {
         guard !games.isEmpty else { return }
         for game in games {
             applyPlatform(platform, toGameID: game.id)
-            mutateOverride(game.stableKey) { $0.platform = platform.id }
+            mutateOverride(game.stableKey) {
+                $0.platform = platform.id
+                $0.emulator = nil
+                $0.launchArguments = nil
+            }
         }
         persist()
     }
@@ -769,16 +790,89 @@ final class MainViewModel: ObservableObject {
         return choice.shortDisplayName
     }
 
-    /// Edit the launch argument template. Empty string clears the override and
-    /// restores the emulator's default template.
-    func setArgsTemplate(_ args: String, for game: GameEntry) {
-        let trimmed = args
-        if trimmed.isEmpty {
-            resetOverride(.args, for: game)
+    /// Parse and store a per-game arguments-only override. Empty text restores
+    /// the curated platform/emulator profile.
+    func setCustomLaunchArguments(_ text: String, for game: GameEntry) throws {
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            resetOverride(.launchArguments, for: game)
             return
         }
-        updateGame(game.id) { $0.argsTemplate = trimmed }
-        updateOverride(game.stableKey) { $0.args = trimmed }
+        let arguments = try LaunchArguments.parse(text)
+        let core = game.emulator.flatMap {
+            emulatorConfig.resolve($0, for: game.platform)?.corePath
+        }
+        _ = try LaunchArguments.resolve(arguments, rom: game.launchPath, core: core)
+        updateGame(game.id) { $0.launchArguments = arguments }
+        updateOverride(game.stableKey) { $0.launchArguments = arguments }
+    }
+
+    func launchArgumentsText(for game: GameEntry) -> String {
+        LaunchArguments.format(game.launchArguments)
+    }
+
+    func resolvedLaunchPreview(for game: GameEntry) -> String {
+        guard let choice = game.emulator,
+              let resolved = emulatorConfig.resolve(choice, for: game.platform) else {
+            return "No runnable emulator selected"
+        }
+        do {
+            let arguments = try LaunchArguments.resolve(
+                game.launchArguments,
+                rom: game.launchPath,
+                core: resolved.corePath
+            )
+            var command: [String]
+            if resolved.emulatorPath.pathExtension.lowercased() == "app" {
+                command = ["/usr/bin/open", "-a", resolved.emulatorPath.path]
+                if !arguments.isEmpty {
+                    command.append("--args")
+                    command.append(contentsOf: arguments)
+                }
+            } else {
+                command = [resolved.emulatorPath.path] + arguments
+            }
+            return LaunchArguments.format(command)
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    /// Launch the game immediately with the same structured arguments used by
+    /// generated bundles. This is only invoked from the explicit Test Launch button.
+    func testLaunch(_ game: GameEntry) {
+        guard let choice = game.emulator,
+              let resolved = emulatorConfig.resolve(choice, for: game.platform) else {
+            errorMessage = "No runnable emulator is selected."
+            return
+        }
+        do {
+            let arguments = try LaunchArguments.resolve(
+                game.launchArguments,
+                rom: game.launchPath,
+                core: resolved.corePath
+            )
+            if resolved.emulatorPath.pathExtension.lowercased() == "app" {
+                let configuration = NSWorkspace.OpenConfiguration()
+                configuration.arguments = arguments
+                NSWorkspace.shared.openApplication(
+                    at: resolved.emulatorPath,
+                    configuration: configuration
+                ) { [weak self] _, error in
+                    if let error {
+                        Task { @MainActor in
+                            self?.errorMessage = "Test launch failed: \(error.localizedDescription)"
+                        }
+                    }
+                }
+            } else {
+                let process = Process()
+                process.executableURL = resolved.emulatorPath
+                process.arguments = arguments
+                try process.run()
+            }
+        } catch {
+            errorMessage = "Test launch failed: \(error.localizedDescription)"
+        }
     }
 
     // MARK: Custom artwork
@@ -827,7 +921,7 @@ final class MainViewModel: ObservableObject {
         case .title:       return override.customTitle != nil
         case .platform:    return override.platform != nil
         case .emulator:    return override.emulator != nil
-        case .args:        return override.args != nil
+        case .launchArguments: return override.launchArguments != nil
         case .launchImage: return override.imagePath != nil
         }
     }
@@ -856,13 +950,23 @@ final class MainViewModel: ObservableObject {
                     self.clearEmulator(&entry)
                 }
             case .emulator:
-                if let base {
-                    entry.emulator = base.emulator
-                    entry.emulatorPath = base.emulatorPath
-                    entry.argsTemplate = base.argsTemplate
+                if let choice = self.emulatorConfig.defaultChoice(
+                    for: entry.platform,
+                    romExtension: entry.launchPath.pathExtension
+                ) {
+                    self.assignEmulator(&entry, choice: choice)
+                } else {
+                    self.clearEmulator(&entry)
                 }
-            case .args:
-                entry.argsTemplate = base?.argsTemplate ?? entry.argsTemplate
+            case .launchArguments:
+                if let choice = entry.emulator {
+                    entry.launchArguments = self.database.launchArguments(
+                        for: choice,
+                        platform: entry.platform
+                    )
+                } else {
+                    entry.launchArguments = []
+                }
             case .launchImage:
                 entry.launchImage = base?.launchImage
             }
@@ -870,9 +974,14 @@ final class MainViewModel: ObservableObject {
         updateOverride(game.stableKey) { override in
             switch field {
             case .title:       override.customTitle = nil
-            case .platform:    override.platform = nil
-            case .emulator:    override.emulator = nil
-            case .args:        override.args = nil
+            case .platform:
+                override.platform = nil
+                override.emulator = nil
+                override.launchArguments = nil
+            case .emulator:
+                override.emulator = nil
+                override.launchArguments = nil
+            case .launchArguments: override.launchArguments = nil
             case .launchImage: override.imagePath = nil
             }
         }
@@ -887,7 +996,7 @@ final class MainViewModel: ObservableObject {
                 entry.platform = base.platform
                 entry.emulator = base.emulator
                 entry.emulatorPath = base.emulatorPath
-                entry.argsTemplate = base.argsTemplate
+                entry.launchArguments = base.launchArguments
                 entry.launchImage = base.launchImage
             }
         }
@@ -935,7 +1044,7 @@ final class MainViewModel: ObservableObject {
             hasher.combine(game.platform.id)
             hasher.combine(game.emulator?.signatureToken)
             hasher.combine(game.emulatorPath?.path)
-            hasher.combine(game.argsTemplate)
+            hasher.combine(game.launchArguments)
             hasher.combine(game.launchPath.path)
             if case .cached(let url) = game.artworkStatus {
                 hasher.combine(url.path)
@@ -1059,7 +1168,8 @@ final class MainViewModel: ObservableObject {
                 continue
             }
 
-            guard let choice = game.emulator, let resolved = emulatorConfig.resolve(choice) else {
+            guard let choice = game.emulator,
+                  let resolved = emulatorConfig.resolve(choice, for: game.platform) else {
                 warnings.append(ConversionWarning(
                     shortcutName: game.title, type: .missingEmulator,
                     message: "No installed emulator for \(game.platform.displayName)."))
@@ -1076,10 +1186,7 @@ final class MainViewModel: ObservableObject {
                 bundleIdentifier: idByKey[game.stableKey] ?? "com.romshortcutmaker.game",
                 displayName: game.title,
                 executablePath: resolved.emulatorPath,
-                // Prefer the entry's template so a per-game args override (edited
-                // in Properties) is honored; it equals the emulator default when
-                // not overridden.
-                argsTemplate: game.argsTemplate.isEmpty ? resolved.argsTemplate : game.argsTemplate,
+                launchArguments: game.launchArguments,
                 romPath: game.launchPath,
                 corePath: resolved.corePath,
                 iconICNS: artworkCache.hasICNS(for: game.stableKey) ? artworkCache.icnsURL(for: game.stableKey) : nil,
@@ -1153,7 +1260,7 @@ final class MainViewModel: ObservableObject {
     private func clearEmulator(_ entry: inout GameEntry) {
         entry.emulator = nil
         entry.emulatorPath = nil
-        entry.argsTemplate = ""
+        entry.launchArguments = []
     }
 
     private func applyPlatform(_ platform: Platform, toGameID id: GameEntry.ID) {
