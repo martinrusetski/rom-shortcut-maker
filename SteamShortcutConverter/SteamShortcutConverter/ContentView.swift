@@ -201,45 +201,41 @@ private struct GameListZone: View {
                     .width(28)
 
                     TableColumn("Game") { game in
-                        GameTitleCell(game: game)
+                        GameTitleCell(game: game, action: generationPlan.action(for: game))
                     }
-                    .width(min: 180, ideal: 230, max: 320)
+                    .width(min: 210, ideal: 280, max: 420)
 
                     TableColumn("Platform") { game in
-                        Text(game.platform.displayName)
-                            .foregroundColor(game.platform.id == "unknown" ? .orange : .primary)
-                            .lineLimit(1)
+                        Picker("Platform", selection: Binding(
+                            get: { game.platform },
+                            set: { viewModel.setPlatform($0, for: game) }
+                        )) {
+                            ForEach(viewModel.allPlatformsIncludingUnknown) { platform in
+                                Text(platform.displayName).tag(platform)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .help("Change platform for \(game.title)")
                     }
-                    .width(min: 70, ideal: 80, max: 110)
+                    .width(min: 100, ideal: 120, max: 160)
 
                     TableColumn("Emulator") { game in
-                        Text(game.emulator?.shortDisplayName ?? "—")
-                            .foregroundColor(game.emulator == nil ? .orange : .secondary)
-                            .lineLimit(1)
+                        InlineEmulatorPicker(viewModel: viewModel, game: game)
                     }
-                    .width(min: 90, ideal: 110, max: 145)
-
-                    TableColumn("File") { game in
-                        GameFileCell(game: game)
-                    }
-                    .width(min: 65, ideal: 75, max: 100)
-
-                    TableColumn("Status") { game in
-                        GenerationStatusCell(game: game, action: generationPlan.action(for: game))
-                    }
-                    .width(min: 95, ideal: 110, max: 135)
+                    .width(min: 125, ideal: 155, max: 210)
 
                     TableColumn("") { game in
                         Button {
                             viewModel.propertiesGameID = game.id
                         } label: {
-                            Image(systemName: "info.circle")
+                            Label("Edit…", systemImage: "slider.horizontal.3")
                         }
-                        .buttonStyle(.borderless)
-                        .foregroundColor(.secondary)
-                        .help("Game Properties")
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .help("Open Game Properties for \(game.title)")
                     }
-                    .width(28)
+                    .width(78)
                 }
                 .contextMenu(forSelectionType: GameEntry.ID.self) { ids in
                     selectionMenu(for: ids)
@@ -302,6 +298,59 @@ private struct GameListZone: View {
         for game in viewModel.games where viewModel.selection.contains(game.id) {
             viewModel.setSelected(false, for: game)
         }
+    }
+}
+
+private struct InlineEmulatorPicker: View {
+    @ObservedObject var viewModel: MainViewModel
+    let game: GameEntry
+
+    private var options: [EmulatorOption] {
+        viewModel.availableOptions(for: game)
+    }
+
+    var body: some View {
+        if options.isEmpty {
+            Button {
+                if game.platform.id == "unknown" {
+                    viewModel.propertiesGameID = game.id
+                } else {
+                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                }
+            } label: {
+                Label(
+                    game.platform.id == "unknown" ? "Choose platform" : "Set up…",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .lineLimit(1)
+            }
+            .buttonStyle(.borderless)
+            .foregroundColor(.orange)
+            .help(game.platform.id == "unknown"
+                  ? "Choose a platform before selecting an emulator"
+                  : "No compatible emulator is configured. Open Settings to set one up.")
+        } else {
+            Picker("Emulator", selection: Binding<EmulatorChoice?>(
+                get: { game.emulator },
+                set: { if let choice = $0 { viewModel.setEmulatorChoice(choice, for: game) } }
+            )) {
+                if game.emulator == nil {
+                    Text("Choose…").tag(Optional<EmulatorChoice>.none)
+                }
+                ForEach(options, id: \.choice) { option in
+                    Text(label(for: option)).tag(Optional(option.choice))
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .help("Change emulator for \(game.title)")
+        }
+    }
+
+    private func label(for option: EmulatorOption) -> String {
+        viewModel.defaultChoiceSetting(for: game.platform) == option.choice
+            ? "\(option.displayName) - default"
+            : option.displayName
     }
 }
 

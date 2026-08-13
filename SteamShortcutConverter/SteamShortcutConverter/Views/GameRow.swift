@@ -91,6 +91,7 @@ struct ThumbnailView: View {
 
 struct GameTitleCell: View {
     let game: GameEntry
+    let action: MainViewModel.GenerationAction
 
     var body: some View {
         HStack(spacing: 8) {
@@ -99,6 +100,7 @@ struct GameTitleCell: View {
             Text(game.title)
                 .lineLimit(1)
                 .truncationMode(.middle)
+            GameStatusIcon(game: game, action: action)
         }
         .opacity(game.isSelected ? 1 : 0.55)
     }
@@ -110,60 +112,53 @@ struct GameTitleCell: View {
 
 }
 
-struct GameFileCell: View {
-    let game: GameEntry
-
-    var body: some View {
-        Group {
-            if game.launchPath.pathExtension.lowercased() == "m3u", let count = game.discCount {
-                Text(".m3u · \(count) discs")
-            } else {
-                Text(game.launchPath.pathExtension.isEmpty ? "—" : ".\(game.launchPath.pathExtension.lowercased())")
-            }
-        }
-        .foregroundColor(.secondary)
-        .lineLimit(1)
-    }
-}
-
-struct GenerationStatusCell: View {
+private struct GameStatusIcon: View {
     let game: GameEntry
     let action: MainViewModel.GenerationAction
 
     var body: some View {
-        Group {
-            if case .downloading = game.artworkStatus {
-                Label("Artwork", systemImage: "arrow.down.circle")
-                    .foregroundColor(.secondary)
-            } else {
-                switch action {
-                case .create:
-                    Label("New", systemImage: "plus.circle.fill")
-                        .foregroundColor(.accentColor)
-                case .update:
-                    Label("Update", systemImage: "arrow.triangle.2.circlepath.circle.fill")
-                        .foregroundColor(.accentColor)
-                case .upToDate:
-                    Label("Up to date", systemImage: "checkmark.circle")
-                        .foregroundColor(.secondary)
-                case .excluded:
-                    Text("Excluded").foregroundColor(.secondary)
-                case .needsAttention:
-                    switch game.status {
-                    case .unknownPlatform:
-                        Label("Unknown platform", systemImage: "questionmark.circle.fill")
-                            .foregroundColor(.orange)
-                    case .noEmulator:
-                        Label("No emulator", systemImage: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
-                    case .ready:
-                        Label("Needs attention", systemImage: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
-                    }
-                }
+        Image(systemName: symbolName)
+            .foregroundColor(color)
+            .font(.caption)
+            .help(statusDescription)
+            .accessibilityLabel(statusDescription)
+    }
+
+    private var symbolName: String {
+        if case .downloading = game.artworkStatus { return "arrow.down.circle" }
+        switch action {
+        case .create: return "plus.circle.fill"
+        case .update: return "arrow.triangle.2.circlepath.circle.fill"
+        case .upToDate: return "checkmark.circle"
+        case .excluded: return "minus.circle"
+        case .needsAttention:
+            return game.status == .unknownPlatform
+                ? "questionmark.circle.fill"
+                : "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var color: Color {
+        if case .needsAttention = action { return .orange }
+        switch action {
+        case .create, .update: return .accentColor
+        case .upToDate, .excluded, .needsAttention: return .secondary
+        }
+    }
+
+    private var statusDescription: String {
+        if case .downloading = game.artworkStatus { return "Downloading artwork" }
+        switch action {
+        case .create: return "New - will be created"
+        case .update: return "Changed - will be updated"
+        case .upToDate: return "Up to date"
+        case .excluded: return "Excluded from generation"
+        case .needsAttention:
+            switch game.status {
+            case .unknownPlatform: return "Needs attention - choose a platform"
+            case .noEmulator: return "Needs attention - choose an emulator"
+            case .ready: return "Needs attention"
             }
         }
-        .font(.caption)
-        .lineLimit(1)
     }
 }

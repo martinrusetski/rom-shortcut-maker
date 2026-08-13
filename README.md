@@ -26,7 +26,7 @@ Either way, once installed the app updates itself in the background (via Sparkle
 ## Key Features
 
 - **Direct ROM scanning**: Point it at a ROM directory and it walks the tree, identifying games and platforms. Platform is inferred folder-first (e.g. `/ROMs/SNES/…`), falling back to file extension.
-- **Searchable game library**: Review every game in one compact table, with platform, emulator, source file, generation status, and filters for included, changed, or unresolved games.
+- **Searchable game library**: Review every game in one compact table, change its platform or emulator inline, and use status icons and filters to find included, changed, or unresolved games.
 - **Emulator resolution**: Detects installed standalone emulators and RetroArch cores, and offers every runnable option per game. Set a default emulator per platform, or override per game.
 - **Game properties editor**: Edit the display name, platform, emulator, launch file, and advanced command template in a focused inspector. Changes are saved automatically, including title edits as you type.
 - **Artwork from SteamGridDB**: Browse and choose from multiple icon results, with grid artwork as a fallback for obscure titles. Downloaded artwork is cached on disk and reused across re-scans.
@@ -47,7 +47,7 @@ Either way, once installed the app updates itself in the background (via Sparkle
 
 1. Choose your **ROM Folder**. Scanning begins immediately; you can also drag a folder onto the window or use **Import from Steam…** for a `shortcuts.vdf` file.
 2. Review the library table. Use search and the **Included**, **Changed**, and **Needs Attention** filters to focus the list. Clear a row's checkbox to exclude it from generation.
-3. Double-click a game or click its info button to open **Game Properties**. Title changes save as you type; platform and emulator choices update the generation plan immediately.
+3. Change a game's platform or emulator directly in the table. Double-click it or click **Edit…** for title, artwork, launch, and advanced properties. Changes update the generation plan immediately.
 4. In Game Properties, click **Change Artwork…** to search SteamGridDB and choose a specific icon or grid. Add your SteamGridDB API key in **Rom Shortcut Maker > Settings** if needed.
 5. Choose the **Output** folder. The footer shows exactly how many apps are new, updated, current, or need attention.
 6. Click **Generate _N_ Changes**. When everything is current, the action changes to **Rebuild Selected** for an explicit forced rebuild.
