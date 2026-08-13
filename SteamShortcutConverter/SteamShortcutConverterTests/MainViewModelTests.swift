@@ -12,13 +12,22 @@ import XCTest
 // MARK: - Fakes
 
 final class FakeROMScanner: ROMScanning {
+    enum Failure: Error { case unavailable }
+
     var result: [DiscoveredROM]
+    var resultsByDirectory: [String: [DiscoveredROM]] = [:]
+    var failingDirectories: Set<String> = []
     private(set) var scanCallCount = 0
+    private(set) var scannedDirectories: [String] = []
     init(_ result: [DiscoveredROM]) { self.result = result }
     func scan(directory: URL, progress: @escaping (Double) -> Void) async throws -> [DiscoveredROM] {
         scanCallCount += 1
+        scannedDirectories.append(directory.standardizedFileURL.path)
+        if failingDirectories.contains(directory.standardizedFileURL.path) {
+            throw Failure.unavailable
+        }
         progress(1.0)
-        return result
+        return resultsByDirectory[directory.standardizedFileURL.path] ?? result
     }
 }
 
@@ -184,8 +193,7 @@ final class MainViewModelTests: XCTestCase {
             vdfBridge: VDFToGameEntryBridge(database: database),
             playlistManager: PlaylistManager(directory: tempDir.appendingPathComponent("playlists"))
         )
-        // The fake scanner ignores the directory, but scan() guards on it.
-        viewModel.scanDirectory = "/ROMs"
+        viewModel.watchedFolders = ["/ROMs"]
         return viewModel
     }
 
@@ -215,12 +223,12 @@ final class MainViewModelTests: XCTestCase {
         XCTAssertEqual(vm.steamGridDBApiKey, "abc")
     }
 
-    /// A persisted scan directory that exists on disk should be rescanned on
-    /// `load()` so the list isn't empty after relaunch — exactly one scan.
-    func testLoadRescansPersistedDirectory() async throws {
+    /// Persisted watched folders should be rescanned on load so the list is not
+    /// empty after relaunch.
+    func testLoadRescansPersistedFolders() async throws {
         let dir = tempDir.appendingPathComponent("library")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let config = AppConfigurationV2(sourceMode: "scan", lastScanDirectory: dir.path)
+        let config = AppConfigurationV2(sourceMode: "scan", watchedFolders: [dir.path])
         let scanner = FakeROMScanner([snesROM("/ROMs/SNES/Zelda.sfc")])
         let vm = makeViewModel(roms: [], store: InMemoryRomConfigStore(config: config), scanner: scanner)
         await vm.load()
@@ -228,14 +236,21 @@ final class MainViewModelTests: XCTestCase {
         XCTAssertEqual(vm.games.count, 1)
     }
 
-    /// A missing persisted directory must not trigger a scan (and must not crash).
-    func testLoadDoesNotRescanMissingDirectory() async {
-        let config = AppConfigurationV2(sourceMode: "scan", lastScanDirectory: "/no/such/dir")
+    /// An unavailable watched folder must not populate the library or crash.
+    func testLoadDoesNotScanMissingWatchedFolder() async {
+        let config = AppConfigurationV2(sourceMode: "scan", watchedFolders: ["/no/such/dir"])
         let scanner = FakeROMScanner([snesROM("/ROMs/SNES/Zelda.sfc")])
+        scanner.failingDirectories = ["/no/such/dir"]
         let vm = makeViewModel(roms: [], store: InMemoryRomConfigStore(config: config), scanner: scanner)
         await vm.load()
-        XCTAssertEqual(scanner.scanCallCount, 0)
+        XCTAssertEqual(scanner.scanCallCount, 1)
         XCTAssertTrue(vm.games.isEmpty)
+    }
+
+    func testLoadPromptsWhenWatchlistIsEmpty() async {
+        let vm = makeViewModel(roms: [], store: InMemoryRomConfigStore())
+        await vm.load()
+        XCTAssertTrue(vm.showingWatchedFolderPrompt)
     }
 
     /// Un-checking a game persists as an `excluded` override and survives a rescan.
@@ -257,6 +272,33 @@ final class MainViewModelTests: XCTestCase {
         XCTAssertEqual(vm.games.count, 1)
         XCTAssertEqual(vm.games.first?.title, "Chrono Trigger")
         XCTAssertEqual(vm.games.first?.platform.id, "snes")
+    }
+
+    func testScanCombinesMultipleWatchedFolders() async {
+        let scanner = FakeROMScanner([])
+        scanner.resultsByDirectory = [
+            "/ROMs/One": [snesROM("/ROMs/One/Zelda.sfc")],
+            "/ROMs/Two": [snesROM("/ROMs/Two/Chrono Trigger.sfc")]
+        ]
+        let vm = makeViewModel(roms: [], scanner: scanner)
+        vm.watchedFolders = ["/ROMs/One", "/ROMs/Two"]
+
+        await vm.scan()
+
+        XCTAssertEqual(scanner.scannedDirectories, ["/ROMs/One", "/ROMs/Two"])
+        XCTAssertEqual(Set(vm.games.map(\.title)), ["Zelda", "Chrono Trigger"])
+    }
+
+    func testScanDeduplicatesROMsFromOverlappingWatchedFolders() async {
+        let duplicate = snesROM("/ROMs/Shared/Zelda.sfc")
+        let scanner = FakeROMScanner([duplicate])
+        let vm = makeViewModel(roms: [], scanner: scanner)
+        vm.watchedFolders = ["/ROMs", "/ROMs/Shared"]
+
+        await vm.scan()
+
+        XCTAssertEqual(scanner.scanCallCount, 2)
+        XCTAssertEqual(vm.games.count, 1)
     }
 
     func testScanAssignsDefaultEmulator() async {

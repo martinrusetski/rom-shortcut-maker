@@ -34,7 +34,7 @@ struct GameOverride: Codable, Equatable {
 struct AppConfigurationV2: Codable, Equatable {
     var version: Int
     var sourceMode: String                 // "scan" | "vdf"
-    var lastScanDirectory: String?
+    var watchedFolders: [String]
     var outputDirectory: String?
     var removeOrphanedBundles: Bool
     var steamGridDBApiKey: String?
@@ -51,7 +51,7 @@ struct AppConfigurationV2: Codable, Equatable {
     init(
         version: Int = 2,
         sourceMode: String = "scan",
-        lastScanDirectory: String? = nil,
+        watchedFolders: [String] = [],
         outputDirectory: String? = nil,
         removeOrphanedBundles: Bool = false,
         steamGridDBApiKey: String? = nil,
@@ -63,7 +63,7 @@ struct AppConfigurationV2: Codable, Equatable {
     ) {
         self.version = version
         self.sourceMode = sourceMode
-        self.lastScanDirectory = lastScanDirectory
+        self.watchedFolders = watchedFolders
         self.outputDirectory = outputDirectory
         self.removeOrphanedBundles = removeOrphanedBundles
         self.steamGridDBApiKey = steamGridDBApiKey
@@ -80,7 +80,7 @@ struct AppConfigurationV2: Codable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 2
         sourceMode = try c.decodeIfPresent(String.self, forKey: .sourceMode) ?? "scan"
-        lastScanDirectory = try c.decodeIfPresent(String.self, forKey: .lastScanDirectory)
+        watchedFolders = try c.decodeIfPresent([String].self, forKey: .watchedFolders) ?? []
         outputDirectory = try c.decodeIfPresent(String.self, forKey: .outputDirectory)
         removeOrphanedBundles = try c.decodeIfPresent(Bool.self, forKey: .removeOrphanedBundles) ?? false
         steamGridDBApiKey = try c.decodeIfPresent(String.self, forKey: .steamGridDBApiKey)
@@ -100,7 +100,7 @@ struct AppConfigurationV2: Codable, Equatable {
         AppConfigurationV2(
             version: 2,
             sourceMode: "vdf",
-            lastScanDirectory: nil,
+            watchedFolders: [],
             outputDirectory: v1.outputDirectory,
             removeOrphanedBundles: v1.removeOrphanedBundles,
             steamGridDBApiKey: nil,

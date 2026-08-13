@@ -27,9 +27,89 @@ struct SettingsView: View {
 
 private struct GeneralPane: View {
     @ObservedObject var viewModel: MainViewModel
+    @State private var selectedFolders: Set<String> = []
 
     var body: some View {
         Form {
+            Section("Watched Folders") {
+                List(selection: $selectedFolders) {
+                    ForEach(viewModel.watchedFolders, id: \.self) { path in
+                        WatchedFolderRow(path: path)
+                            .tag(path)
+                            .contextMenu {
+                                Button("Remove", role: .destructive) {
+                                    Task { await viewModel.removeWatchedFolders(Set([path])) }
+                                }
+                            }
+                    }
+                }
+                .frame(height: 132)
+                .overlay {
+                    if viewModel.watchedFolders.isEmpty {
+                        ContentUnavailableView {
+                            Label("No Watched Folders", systemImage: "folder")
+                        } description: {
+                            Text("Add one or more folders containing ROMs.")
+                        }
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    Button {
+                        guard let url = FilePicker.chooseDirectory(title: "Add Watched Folder") else { return }
+                        Task { await viewModel.addWatchedFolder(url) }
+                    } label: {
+                        Image(systemName: "plus")
+                            .frame(width: 16, height: 16)
+                    }
+                    .help("Add watched folder")
+                    .disabled(viewModel.isProcessing)
+
+                    Button {
+                        let paths = selectedFolders
+                        selectedFolders = []
+                        Task { await viewModel.removeWatchedFolders(paths) }
+                    } label: {
+                        Image(systemName: "minus")
+                            .frame(width: 16, height: 16)
+                    }
+                    .help("Remove selected folders")
+                    .disabled(selectedFolders.isEmpty || viewModel.isProcessing)
+
+                    Spacer()
+
+                    Text("\(viewModel.watchedFolders.count) watched")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Text("Folders are scanned together into one library. Dragging a folder onto the main window adds it here.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Section("Steam Import") {
+                LabeledContent {
+                    Button {
+                        guard let url = FilePicker.chooseFile(
+                            title: "Select Steam shortcuts.vdf",
+                            extensions: ["vdf"]
+                        ) else { return }
+                        Task { await viewModel.importFromVDF(url: url) }
+                    } label: {
+                        Label("Import shortcuts.vdf…", systemImage: "square.and.arrow.down")
+                    }
+                    .disabled(viewModel.isProcessing)
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Existing shortcuts")
+                        Text("Load an existing Steam ROM library for review.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
             Section {
                 Toggle("Remove orphaned bundles", isOn: $viewModel.removeOrphanedBundles)
                     .onChange(of: viewModel.removeOrphanedBundles) { _ in viewModel.saveSettings() }
@@ -37,10 +117,6 @@ private struct GeneralPane: View {
                     .font(.caption).foregroundColor(.secondary)
             }
             Section("Locations") {
-                LabeledContent("Last ROM folder") {
-                    Text(viewModel.scanDirectory.isEmpty ? "—" : viewModel.scanDirectory)
-                        .foregroundColor(.secondary).lineLimit(1).truncationMode(.middle)
-                }
                 LabeledContent("Output folder") {
                     Text(viewModel.outputDirectory.isEmpty ? "—" : viewModel.outputDirectory)
                         .foregroundColor(.secondary).lineLimit(1).truncationMode(.middle)
@@ -69,6 +145,45 @@ private struct GeneralPane: View {
         }
         .formStyle(.grouped)
         .padding()
+    }
+}
+
+private struct WatchedFolderRow: View {
+    let path: String
+
+    private var isAvailable: Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+            && isDirectory.boolValue
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "folder.fill")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(isAvailable ? Color.accentColor : Color.secondary)
+                .frame(width: 28, height: 28)
+                .background(Color.accentColor.opacity(isAvailable ? 0.10 : 0.04), in: Circle())
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(URL(fileURLWithPath: path).lastPathComponent)
+                    .lineLimit(1)
+                Text(path)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer()
+
+            if !isAvailable {
+                Label("Unavailable", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+        }
+        .padding(.vertical, 2)
     }
 }
 
@@ -108,16 +223,27 @@ private struct EmulatorsPane: View {
                     if options.isEmpty {
                         Text("Not installed").foregroundColor(.secondary).font(.caption)
                     } else {
-                        Picker("", selection: Binding(
-                            get: { viewModel.defaultChoiceSetting(for: platform) ?? options.first?.choice },
-                            set: { if let choice = $0 { viewModel.setDefaultChoice(choice, for: platform) } }
-                        )) {
+                        let selectedChoice = viewModel.defaultChoiceSetting(for: platform)
+                            ?? options.first?.choice
+                        let selectedTitle = options.first { $0.choice == selectedChoice }?.displayName
+                            ?? "Choose…"
+                        FixedWidthMenu(
+                            title: selectedTitle,
+                            width: 240,
+                            accessibilityLabel: "Default emulator for \(platform.displayName): \(selectedTitle)"
+                        ) {
                             ForEach(options, id: \.choice) { option in
-                                Text(option.displayName).tag(Optional(option.choice))
+                                Button {
+                                    viewModel.setDefaultChoice(option.choice, for: platform)
+                                } label: {
+                                    if option.choice == selectedChoice {
+                                        Label(option.displayName, systemImage: "checkmark")
+                                    } else {
+                                        Text(option.displayName)
+                                    }
+                                }
                             }
                         }
-                        .labelsHidden()
-                        .frame(width: 240)
                     }
                 }
             }

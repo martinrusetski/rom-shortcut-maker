@@ -24,6 +24,7 @@ final class RomConfigMigrationTests: XCTestCase {
         XCTAssertTrue(v2.removeOrphanedBundles)
         XCTAssertEqual(v2.lastConversionDate, Date(timeIntervalSince1970: 1000))
         XCTAssertEqual(v2.legacyCustomNames[7], "Custom")
+        XCTAssertTrue(v2.watchedFolders.isEmpty)
         XCTAssertTrue(v2.gameOverrides.isEmpty)
     }
 
@@ -53,7 +54,11 @@ final class RomConfigMigrationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: dir) }
 
         let store = DefaultRomConfigStore(directory: dir)
-        var config = AppConfigurationV2(outputDirectory: "/Out", steamGridDBApiKey: "key")
+        var config = AppConfigurationV2(
+            watchedFolders: ["/ROMs/Consoles", "/ROMs/Handhelds"],
+            outputDirectory: "/Out",
+            steamGridDBApiKey: "key"
+        )
         config.gameOverrides["abc"] = GameOverride(customTitle: "T", emulator: .standalone(.snes9x))
         try await store.save(config)
 

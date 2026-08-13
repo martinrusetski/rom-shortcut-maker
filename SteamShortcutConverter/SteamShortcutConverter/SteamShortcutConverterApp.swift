@@ -32,36 +32,22 @@ struct SteamShortcutConverterApp: App {
 
         Settings {
             SettingsView(viewModel: viewModel)
-                .frame(width: 460, height: 420)
+                .frame(width: 560, height: 560)
         }
     }
 }
 
 // MARK: - Menu commands
 
-/// A deliberately short menu, mirroring the in-window controls.
+/// A deliberately short menu for library-wide actions.
 struct AppCommands: Commands {
     @ObservedObject var viewModel: MainViewModel
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
-            Button("Choose ROM Folder…") {
-                if let url = FilePicker.chooseDirectory(title: "Select ROM Folder") {
-                    Task { await viewModel.setScanDirectoryAndScan(url) }
-                }
-            }
-            .keyboardShortcut("o", modifiers: .command)
-
             Button("Rescan") { Task { await viewModel.scan() } }
                 .keyboardShortcut("r", modifiers: .command)
-                .disabled(viewModel.scanDirectory.isEmpty || viewModel.isProcessing)
-
-            Button("Import from Steam…") {
-                if let url = FilePicker.chooseFile(title: "Select shortcuts.vdf", extensions: ["vdf"]) {
-                    Task { await viewModel.importFromVDF(url: url) }
-                }
-            }
-            .disabled(viewModel.isProcessing)
+                .disabled(viewModel.watchedFolders.isEmpty || viewModel.isProcessing)
 
             Divider()
 
@@ -78,25 +64,8 @@ struct AppCommands: Commands {
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        // Only apply legacy window height locking for versions older than macOS 13
-        if #available(macOS 13.0, *) {
-            // Managed by .windowResizability(.contentSize)
-        } else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                if let window = NSApplication.shared.windows.first {
-                    let currentHeight = window.frame.height
-                    window.minSize = NSSize(width: 500, height: currentHeight)
-                    window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: currentHeight)
-                }
-            }
-        }
-    }
-    
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return true
     }
 }
-
-
 

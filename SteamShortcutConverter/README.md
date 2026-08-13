@@ -8,9 +8,8 @@ This tool reads Steam's `shortcuts.vdf` file and generates standalone macOS appl
 
 ## Requirements
 
-- macOS 12.0 or later
-- Xcode 14.0 or later (for building)
-- Swift 5.0 or later
+- macOS 26.0 or later
+- Xcode 26.0 or later (includes the macOS 26 SDK)
 
 ## Project Structure
 

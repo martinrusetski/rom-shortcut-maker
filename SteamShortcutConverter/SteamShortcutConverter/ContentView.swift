@@ -2,9 +2,8 @@
 //  ContentView.swift
 //  SteamShortcutConverter
 //
-//  Rom Shortcut Maker — one window, three zones: source bar (top), grouped game
-//  list (middle), generate bar (bottom). The window reads top to bottom as
-//  "take these ROMs, make these apps, put them here."
+//  Rom Shortcut Maker — a content-first game library with native search
+//  and generation dock.
 //
 
 import SwiftUI
@@ -15,16 +14,31 @@ struct ContentView: View {
     @ObservedObject var viewModel: MainViewModel
     @State private var isDropTargeted = false
     @State private var generationPlan = MainViewModel.GenerationPlan()
+    @State private var search = ""
 
     var body: some View {
-        VStack(spacing: 0) {
-            SourceBar(viewModel: viewModel)
-            Divider()
-            GameListZone(viewModel: viewModel, generationPlan: generationPlan)
-            Divider()
-            GenerateBar(viewModel: viewModel, generationPlan: generationPlan)
+        ZStack {
+            LibraryBackground()
+
+            VStack(spacing: 0) {
+                GameListZone(
+                    viewModel: viewModel,
+                    generationPlan: generationPlan,
+                    search: $search
+                )
+                GenerateDock(viewModel: viewModel, generationPlan: generationPlan)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+            }
         }
-        .frame(minWidth: 760, minHeight: 480)
+        .frame(minWidth: 820, minHeight: 520)
+        .searchable(text: $search, placement: .toolbar, prompt: "Search Games")
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                reloadButton
+            }
+        }
         .overlay {
             if isDropTargeted {
                 RoundedRectangle(cornerRadius: 8)
@@ -40,8 +54,10 @@ struct ContentView: View {
         .task(id: viewModel.generationSignature) {
             generationPlan = await viewModel.generationPlan()
         }
-        .onChange(of: viewModel.propertiesGameID) { id in
-            if id != nil { PropertiesWindowController.shared.show(viewModel: viewModel) }
+        .onChange(of: viewModel.propertiesGameID) {
+            if viewModel.propertiesGameID != nil {
+                PropertiesWindowController.shared.show(viewModel: viewModel)
+            }
         }
         .alert("Something went wrong",
                isPresented: Binding(
@@ -58,6 +74,25 @@ struct ContentView: View {
                 ResultsSheet(summary: summary) { viewModel.showingSummary = false }
             }
         }
+        .sheet(isPresented: $viewModel.showingWatchedFolderPrompt) {
+            FirstFolderPrompt(viewModel: viewModel)
+        }
+    }
+
+    private var reloadButton: some View {
+        Button {
+            Task { await viewModel.scan() }
+        } label: {
+            Image(systemName: "arrow.clockwise")
+                .font(.system(size: 15, weight: .semibold))
+                .frame(width: 34, height: 34)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: Circle())
+        .help("Reload watched folders")
+        .accessibilityLabel("Reload watched folders")
+        .disabled(viewModel.watchedFolders.isEmpty || viewModel.isProcessing)
     }
 
     /// Accept a folder dropped anywhere on the window and scan it immediately.
@@ -74,47 +109,27 @@ struct ContentView: View {
             var isDir: ObjCBool = false
             guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir),
                   isDir.boolValue else { return }
-            Task { @MainActor in await viewModel.setScanDirectoryAndScan(url) }
+            Task { @MainActor in await viewModel.addWatchedFolder(url) }
         }
         return true
     }
 }
 
-// MARK: - Source bar (top)
-
-private struct SourceBar: View {
-    @ObservedObject var viewModel: MainViewModel
-
+private struct LibraryBackground: View {
     var body: some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 8) {
-                Text("ROM Folder:")
-                    .foregroundColor(.secondary)
-                PathField(path: viewModel.scanDirectory, placeholder: "No folder chosen")
-                Button("Choose…") { chooseFolder() }
-                Button("Rescan") { Task { await viewModel.scan() } }
-                    .disabled(viewModel.scanDirectory.isEmpty || viewModel.isProcessing)
-                Divider().frame(height: 16)
-                Button("Import from Steam…") { importFromSteam() }
-                    .disabled(viewModel.isProcessing)
-            }
-            if viewModel.isProcessing {
-                ProgressView(value: viewModel.progressValue)
-                    .progressViewStyle(.linear)
-            }
+        ZStack {
+            Color(nsColor: .windowBackgroundColor)
+            LinearGradient(
+                colors: [
+                    Color.accentColor.opacity(0.07),
+                    Color.clear,
+                    Color.cyan.opacity(0.035)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-    }
-
-    private func chooseFolder() {
-        guard let url = FilePicker.chooseDirectory(title: "Select ROM Folder") else { return }
-        Task { await viewModel.setScanDirectoryAndScan(url) }
-    }
-
-    private func importFromSteam() {
-        guard let url = FilePicker.chooseFile(title: "Select shortcuts.vdf", extensions: ["vdf"]) else { return }
-        Task { await viewModel.importFromVDF(url: url) }
+        .ignoresSafeArea()
     }
 }
 
@@ -123,34 +138,16 @@ private struct SourceBar: View {
 private struct GameListZone: View {
     @ObservedObject var viewModel: MainViewModel
     let generationPlan: MainViewModel.GenerationPlan
-
-    @State private var search = ""
-    @State private var filter: GameFilter = .all
-
-    private enum GameFilter: String, CaseIterable, Identifiable {
-        case all = "All"
-        case included = "Included"
-        case changed = "Changed"
-        case attention = "Needs Attention"
-
-        var id: Self { self }
-    }
+    @Binding var search: String
+    @SceneStorage("game-library-table-columns")
+    private var columnCustomization: TableColumnCustomization<GameEntry>
 
     private var filteredGames: [GameEntry] {
         viewModel.games.filter { game in
-            let matchesSearch = search.isEmpty
+            search.isEmpty
                 || game.title.localizedCaseInsensitiveContains(search)
                 || game.platform.displayName.localizedCaseInsensitiveContains(search)
                 || (game.emulator?.shortDisplayName.localizedCaseInsensitiveContains(search) ?? false)
-            guard matchesSearch else { return false }
-            switch filter {
-            case .all: return true
-            case .included: return game.isSelected
-            case .changed:
-                let action = generationPlan.action(for: game)
-                return action == .create || action == .update
-            case .attention: return generationPlan.action(for: game) == .needsAttention
-            }
         }
         .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
     }
@@ -159,7 +156,7 @@ private struct GameListZone: View {
         if viewModel.games.isEmpty && viewModel.operation == .scanning {
             VStack(spacing: 12) {
                 ProgressView()
-                Text("Scanning ROM folder…")
+                Text("Scanning watched folders…")
                     .foregroundColor(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -167,28 +164,11 @@ private struct GameListZone: View {
             EmptyStateView(viewModel: viewModel)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            VStack(spacing: 0) {
-                HStack(spacing: 8) {
-                    TextField("Search games", text: $search)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(maxWidth: 280)
-                    Picker("Show", selection: $filter) {
-                        ForEach(GameFilter.allCases) { filter in
-                            Text(filter.rawValue).tag(filter)
-                        }
-                    }
-                    .frame(width: 170)
-                    Spacer()
-                    Text("\(filteredGames.count) of \(viewModel.games.count)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-
-                Divider()
-
-                Table(filteredGames, selection: $viewModel.selection) {
+            Table(
+                filteredGames,
+                selection: $viewModel.selection,
+                columnCustomization: $columnCustomization
+            ) {
                     TableColumn("") { game in
                         Toggle("", isOn: Binding(
                             get: { game.isSelected },
@@ -203,7 +183,9 @@ private struct GameListZone: View {
                     TableColumn("Game") { game in
                         GameTitleCell(game: game, action: generationPlan.action(for: game))
                     }
-                    .width(min: 210, ideal: 280, max: 420)
+                    .width(min: 180, ideal: 300, max: .infinity)
+                    .customizationID("game")
+                    .disabledCustomizationBehavior([.reorder, .visibility])
 
                     TableColumn("Platform") { game in
                         Picker("Platform", selection: Binding(
@@ -216,34 +198,49 @@ private struct GameListZone: View {
                         }
                         .labelsHidden()
                         .pickerStyle(.menu)
+                        .frame(maxWidth: .infinity)
                         .help("Change platform for \(game.title)")
                     }
-                    .width(min: 100, ideal: 120, max: 160)
+                    .width(min: 130, ideal: 160, max: 260)
+                    .customizationID("platform")
+                    .disabledCustomizationBehavior([.reorder, .visibility])
 
                     TableColumn("Emulator") { game in
                         InlineEmulatorPicker(viewModel: viewModel, game: game)
                     }
-                    .width(min: 125, ideal: 155, max: 210)
+                    .width(min: 170, ideal: 190, max: 320)
+                    .customizationID("emulator")
+                    .disabledCustomizationBehavior([.reorder, .visibility])
 
                     TableColumn("") { game in
                         Button {
                             viewModel.propertiesGameID = game.id
                         } label: {
-                            Label("Edit…", systemImage: "slider.horizontal.3")
+                            Image(systemName: "slider.horizontal.3")
+                                .frame(width: 24, height: 24)
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
                         .help("Open Game Properties for \(game.title)")
+                        .accessibilityLabel("Open Game Properties for \(game.title)")
                     }
-                    .width(78)
-                }
-                .contextMenu(forSelectionType: GameEntry.ID.self) { ids in
-                    selectionMenu(for: ids)
-                } primaryAction: { ids in
-                    if let id = ids.first { viewModel.propertiesGameID = id }
-                }
-                .onDeleteCommand { excludeSelection() }
+                    .width(36)
             }
+            .tableStyle(.inset(alternatesRowBackgrounds: false))
+            .scrollContentBackground(.hidden)
+            .environment(\.defaultMinListRowHeight, 42)
+            .background(TableColumnResizingBridge())
+            .overlay {
+                if !search.isEmpty && filteredGames.isEmpty {
+                    ContentUnavailableView.search(text: search)
+                }
+            }
+            .contextMenu(forSelectionType: GameEntry.ID.self) { ids in
+                selectionMenu(for: ids)
+            } primaryAction: { ids in
+                if let id = ids.first { viewModel.propertiesGameID = id }
+            }
+            .onDeleteCommand { excludeSelection() }
         }
     }
 
@@ -325,26 +322,39 @@ private struct InlineEmulatorPicker: View {
                 .lineLimit(1)
             }
             .buttonStyle(.borderless)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .foregroundColor(.orange)
             .help(game.platform.id == "unknown"
                   ? "Choose a platform before selecting an emulator"
                   : "No compatible emulator is configured. Open Settings to set one up.")
         } else {
-            Picker("Emulator", selection: Binding<EmulatorChoice?>(
-                get: { game.emulator },
-                set: { if let choice = $0 { viewModel.setEmulatorChoice(choice, for: game) } }
-            )) {
-                if game.emulator == nil {
-                    Text("Choose…").tag(Optional<EmulatorChoice>.none)
-                }
+            FixedWidthMenu(
+                title: selectedLabel,
+                width: 146,
+                accessibilityLabel: "Emulator for \(game.title): \(selectedLabel)"
+            ) {
                 ForEach(options, id: \.choice) { option in
-                    Text(label(for: option)).tag(Optional(option.choice))
+                    Button {
+                        viewModel.setEmulatorChoice(option.choice, for: game)
+                    } label: {
+                        if game.emulator == option.choice {
+                            Label(label(for: option), systemImage: "checkmark")
+                        } else {
+                            Text(label(for: option))
+                        }
+                    }
                 }
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
             .help("Change emulator for \(game.title)")
         }
+    }
+
+    private var selectedLabel: String {
+        guard let choice = game.emulator,
+              let option = options.first(where: { $0.choice == choice }) else {
+            return "Choose…"
+        }
+        return label(for: option)
     }
 
     private func label(for option: EmulatorOption) -> String {
@@ -354,41 +364,75 @@ private struct InlineEmulatorPicker: View {
     }
 }
 
-// MARK: - Generate bar (bottom)
+// MARK: - Generation dock (bottom)
 
-private struct GenerateBar: View {
+private struct GenerateDock: View {
     @ObservedObject var viewModel: MainViewModel
     let generationPlan: MainViewModel.GenerationPlan
 
     var body: some View {
         VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                Text("Output:")
-                    .foregroundColor(.secondary)
-                PathField(path: viewModel.outputDirectory, placeholder: "No output folder chosen")
-                Button("Choose…") {
-                    if let url = FilePicker.chooseDirectory(title: "Select Output Folder") {
-                        viewModel.setOutputDirectory(url)
+            HStack(spacing: 14) {
+                statusSymbol
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(statusTitle)
+                        .font(.headline)
+                    generationSummary
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 12)
+
+                Button(action: chooseOutputFolder) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("OUTPUT")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        Label(outputFolderName, systemImage: "folder")
+                            .lineLimit(1)
+                            .truncationMode(.middle)
                     }
+                    .frame(maxWidth: 180, alignment: .leading)
+                }
+                .buttonStyle(.glass)
+                .help(viewModel.outputDirectory.isEmpty
+                      ? "Choose Output Folder"
+                      : "Output folder: \(viewModel.outputDirectory)")
+
+                if generationPlan.isUpToDate {
+                    Button {
+                        Task { await viewModel.generate(forceRebuild: true) }
+                    } label: {
+                        Label("Rebuild Selected", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.glass)
+                    .controlSize(.large)
+                    .disabled(!viewModel.canGenerate || viewModel.isProcessing)
+                } else {
+                    Button {
+                        Task { await viewModel.generate() }
+                    } label: {
+                        Label(generateButtonTitle, systemImage: "wand.and.sparkles")
+                    }
+                    .buttonStyle(.glassProminent)
+                    .tint(.accentColor)
+                    .controlSize(.large)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!viewModel.canGenerate || viewModel.isProcessing || generationPlan.pendingCount == 0)
                 }
             }
-            HStack(spacing: 8) {
-                generationSummary
-                    .font(.caption)
-                Spacer()
-                if generationPlan.isUpToDate {
-                    Button("Rebuild Selected") { Task { await viewModel.generate(forceRebuild: true) } }
-                        .disabled(!viewModel.canGenerate || viewModel.isProcessing)
-                } else {
-                    Button(generateButtonTitle) { Task { await viewModel.generate() } }
-                        .buttonStyle(.borderedProminent)
-                        .keyboardShortcut(.defaultAction)
-                        .disabled(!viewModel.canGenerate || viewModel.isProcessing || generationPlan.pendingCount == 0)
-                }
+
+            if viewModel.isProcessing {
+                ProgressView(value: viewModel.progressValue)
+                    .progressViewStyle(.linear)
+                    .tint(.accentColor)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private var generateButtonTitle: String {
@@ -400,16 +444,60 @@ private struct GenerateBar: View {
             : "Generate \(generationPlan.pendingCount) Changes"
     }
 
+    private var statusTitle: String {
+        if viewModel.isProcessing {
+            switch viewModel.operation {
+            case .scanning: return "Scanning your library"
+            case .importing: return "Importing from Steam"
+            case .generating: return "Creating your apps"
+            case .idle: break
+            }
+        }
+        if generationPlan.isUpToDate { return "Your library is up to date" }
+        if generationPlan.pendingCount > 0 {
+            return generationPlan.pendingCount == 1 ? "1 change is ready" : "\(generationPlan.pendingCount) changes are ready"
+        }
+        if generationPlan.needsAttention > 0 { return "Some games need attention" }
+        return "Choose games to generate"
+    }
+
+    @ViewBuilder
+    private var statusSymbol: some View {
+        ZStack {
+            Circle()
+                .fill(statusColor.opacity(0.14))
+            Image(systemName: statusSymbolName)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(statusColor)
+        }
+        .frame(width: 34, height: 34)
+        .accessibilityHidden(true)
+    }
+
+    private var statusSymbolName: String {
+        if viewModel.isProcessing { return "gearshape.2.fill" }
+        if generationPlan.isUpToDate { return "checkmark" }
+        if generationPlan.needsAttention > 0 && generationPlan.pendingCount == 0 {
+            return "exclamationmark"
+        }
+        return "sparkles"
+    }
+
+    private var statusColor: Color {
+        if generationPlan.needsAttention > 0 && generationPlan.pendingCount == 0 {
+            return .orange
+        }
+        return generationPlan.isUpToDate ? .green : .accentColor
+    }
+
     @ViewBuilder
     private var generationSummary: some View {
         if viewModel.isProcessing {
             operationStatus
-        } else if generationPlan.isUpToDate {
-            Label(upToDateSummary, systemImage: "checkmark.circle.fill")
-                .foregroundColor(.green)
         } else {
-            Text(planSummaryText)
-                .foregroundColor(.secondary)
+            Text(generationPlan.isUpToDate ? upToDateSummary : planSummaryText)
+                .lineLimit(1)
+                .truncationMode(.tail)
         }
     }
 
@@ -434,11 +522,22 @@ private struct GenerateBar: View {
         return parts.isEmpty ? "No games selected" : parts.joined(separator: " · ")
     }
 
+    private var outputFolderName: String {
+        guard !viewModel.outputDirectory.isEmpty else { return "Choose Folder" }
+        return URL(fileURLWithPath: viewModel.outputDirectory).lastPathComponent
+    }
+
+    private func chooseOutputFolder() {
+        if let url = FilePicker.chooseDirectory(title: "Select Output Folder") {
+            viewModel.setOutputDirectory(url)
+        }
+    }
+
     @ViewBuilder
     private var operationStatus: some View {
         switch viewModel.operation {
         case .scanning:
-            Label("Scanning ROM folder…", systemImage: "magnifyingglass")
+            Label("Scanning watched folders…", systemImage: "magnifyingglass")
         case .importing:
             Label("Importing from Steam…", systemImage: "square.and.arrow.down")
         case .generating:
@@ -459,28 +558,63 @@ private struct EmptyStateView: View {
             Image(systemName: "square.grid.3x3.square")
                 .font(.system(size: 48))
                 .foregroundColor(.secondary)
-            Text("Choose a ROM folder to get started")
+            Text(viewModel.watchedFolders.isEmpty ? "Add a ROM folder to get started" : "No ROMs found")
                 .font(.title3)
-            Text("Pick a folder of ROMs and Rom Shortcut Maker will scan it into launchable macOS apps.")
+            Text(viewModel.watchedFolders.isEmpty
+                 ? "Watched folders are managed in Settings and combined into one app library."
+                 : "The watched folders do not contain any recognized games.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 380)
-            Button("Choose ROM Folder…") {
-                if let url = FilePicker.chooseDirectory(title: "Select ROM Folder") {
-                    Task { await viewModel.setScanDirectoryAndScan(url) }
-                }
+            SettingsLink {
+                Label("Open Settings", systemImage: "gearshape")
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glassProminent)
+            .tint(.accentColor)
             .controlSize(.large)
-            Button("Import from Steam…") {
-                if let url = FilePicker.chooseFile(title: "Select shortcuts.vdf", extensions: ["vdf"]) {
-                    Task { await viewModel.importFromVDF(url: url) }
-                }
-            }
-            .buttonStyle(.link)
         }
         .padding()
+    }
+}
+
+private struct FirstFolderPrompt: View {
+    @ObservedObject var viewModel: MainViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Image(systemName: "folder.badge.plus")
+                .font(.system(size: 34, weight: .medium))
+                .foregroundStyle(.tint)
+                .frame(width: 72, height: 72)
+                .glassEffect(.regular, in: Circle())
+
+            VStack(spacing: 7) {
+                Text("Add Your ROM Folder")
+                    .font(.title2.bold())
+                Text("Rom Shortcut Maker watches one or more folders and keeps them together in a single app library.")
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 350)
+            }
+
+            Button {
+                guard let url = FilePicker.chooseDirectory(title: "Add Watched Folder") else { return }
+                dismiss()
+                Task { await viewModel.addWatchedFolder(url) }
+            } label: {
+                Label("Choose ROM Folder", systemImage: "folder.badge.plus")
+            }
+            .buttonStyle(.glassProminent)
+            .controlSize(.large)
+
+            Button("Not Now") { dismiss() }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+        }
+        .padding(30)
+        .frame(width: 440)
     }
 }
 
@@ -521,27 +655,6 @@ private struct ResultsSheet: View {
         }
         .padding()
         .frame(width: 460)
-    }
-}
-
-// MARK: - Shared bits
-
-/// Read-only, middle-truncated path display styled like a disabled field.
-struct PathField: View {
-    let path: String
-    let placeholder: String
-
-    var body: some View {
-        Text(path.isEmpty ? placeholder : path)
-            .lineLimit(1)
-            .truncationMode(.middle)
-            .foregroundColor(path.isEmpty ? .secondary : .primary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(RoundedRectangle(cornerRadius: 5).fill(Color(nsColor: .textBackgroundColor)))
-            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color.secondary.opacity(0.25)))
-            .help(path)
     }
 }
 

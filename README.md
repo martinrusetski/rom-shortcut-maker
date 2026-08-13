@@ -41,17 +41,18 @@ Either way, once installed the app updates itself in the background (via Sparkle
 - **Build system:** SwiftPM is canonical. `Package.swift` builds the whole app (`@main` included) and links Sparkle. For a GUI dev loop, open `SteamShortcutConverter/Package.swift` directly in Xcode and press ⌘R - no `.xcodeproj` needed. (The legacy `SteamShortcutConverter.xcodeproj` is untracked and no longer required.)
 - **Headless tests (canonical):** `cd SteamShortcutConverter && swift test`. Runs the logic suite without launching the GUI.
 - **Release build:** `./make-dmg.sh v0.1.0` assembles `Rom Shortcut Maker.app` and a DMG locally - the same steps CI runs on a tag push.
-- **Minimum OS:** macOS 13.
+- **Minimum OS:** macOS 26.
 
 ## Quick Start
 
-1. Choose your **ROM Folder**. Scanning begins immediately; you can also drag a folder onto the window or use **Import from Steam…** for a `shortcuts.vdf` file.
-2. Review the library table. Use search and the **Included**, **Changed**, and **Needs Attention** filters to focus the list. Clear a row's checkbox to exclude it from generation.
-3. Change a game's platform or emulator directly in the table. Double-click it or click **Edit…** for title, artwork, launch, and advanced properties. Changes update the generation plan immediately.
-4. In Game Properties, click **Change Artwork…** to search SteamGridDB and choose a specific icon or grid. Add your SteamGridDB API key in **Rom Shortcut Maker > Settings** if needed.
-5. Choose the **Output** folder. The footer shows exactly how many apps are new, updated, current, or need attention.
-6. Click **Generate _N_ Changes**. When everything is current, the action changes to **Rebuild Selected** for an explicit forced rebuild.
-7. Launch the generated apps from Finder, Spotlight, the Dock, or Launchpad.
+1. Add one or more **Watched Folders** in Settings. They are scanned together into one library; you can also drag a folder onto the main window to add it to the watchlist.
+2. To load an existing Steam ROM library, use **Settings > General > Steam Import** and choose its `shortcuts.vdf` file.
+3. Review the library table. Use search and the **Included**, **Changed**, and **Needs Attention** filters to focus the list. Clear a row's checkbox to exclude it from generation.
+4. Change a game's platform or emulator directly in the table. Double-click it or click **Edit…** for title, artwork, launch, and advanced properties. Changes update the generation plan immediately.
+5. In Game Properties, click **Change Artwork…** to search SteamGridDB and choose a specific icon or grid. Add your SteamGridDB API key in **Rom Shortcut Maker > Settings** if needed.
+6. Choose the **Output** folder. The footer shows exactly how many apps are new, updated, current, or need attention.
+7. Click **Generate _N_ Changes**. When everything is current, the action changes to **Rebuild Selected** for an explicit forced rebuild.
+8. Launch the generated apps from Finder, Spotlight, the Dock, or Launchpad.
 
 ## Emulator / System Database
 
@@ -69,7 +70,7 @@ The curated knowledge base of platforms, folder aliases, ROM extensions, standal
 Design and phased implementation plan: `DESIGN_PLAN.md`. Specs: `docs/specs/rom-launcher-wrapper/`.
 
 - **Language**: Swift / SwiftUI
-- **Minimum OS**: macOS 13
+- **Minimum OS**: macOS 26
 - **License**: TBD
 
 ### Releasing

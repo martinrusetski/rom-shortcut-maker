@@ -35,7 +35,7 @@ final class MainViewModel: ObservableObject {
     // MARK: - Published state
 
     @Published var games: [GameEntry] = []
-    @Published var scanDirectory: String = ""
+    @Published var watchedFolders: [String] = []
     @Published var outputDirectory: String = ""
     @Published var sourceMode: SourceMode = .scan
     @Published var steamGridDBApiKey: String = ""
@@ -49,6 +49,7 @@ final class MainViewModel: ObservableObject {
     @Published var showingSummary: Bool = false
     @Published var lastConversionDate: Date?
     @Published var errorMessage: String?
+    @Published var showingWatchedFolderPrompt: Bool = false
 
     /// Rows the user has selected in the list (drives context-menu / ⌘I / the
     /// Properties window). Distinct from `GameEntry.isSelected`, which is the
@@ -146,21 +147,18 @@ final class MainViewModel: ObservableObject {
         } catch {
             errorMessage = "Failed to load configuration: \(error.localizedDescription)"
         }
-        // Restore the last library automatically so the list isn't empty on
-        // relaunch. Only the scan path is persisted (the .vdf path isn't), so
-        // VDF mode is left for the user to re-import.
-        var isDir: ObjCBool = false
-        if sourceMode == .scan,
-           !scanDirectory.isEmpty,
-           FileManager.default.fileExists(atPath: scanDirectory, isDirectory: &isDir),
-           isDir.boolValue {
+        // Restore watched libraries automatically. VDF imports are intentionally
+        // transient because their source path is not persisted.
+        if sourceMode == .scan, !watchedFolders.isEmpty {
             await scan()
+        } else if watchedFolders.isEmpty {
+            showingWatchedFolderPrompt = true
         }
     }
 
     private func apply(_ config: AppConfigurationV2) {
         outputDirectory = config.outputDirectory ?? ""
-        scanDirectory = config.lastScanDirectory ?? ""
+        watchedFolders = config.watchedFolders
         removeOrphanedBundles = config.removeOrphanedBundles
         steamGridDBApiKey = config.steamGridDBApiKey ?? ""
         hashDatabasePath = config.hashDatabasePath ?? ""
@@ -171,7 +169,7 @@ final class MainViewModel: ObservableObject {
 
     private func persist() {
         config.outputDirectory = outputDirectory.isEmpty ? nil : outputDirectory
-        config.lastScanDirectory = scanDirectory.isEmpty ? nil : scanDirectory
+        config.watchedFolders = watchedFolders
         config.removeOrphanedBundles = removeOrphanedBundles
         config.steamGridDBApiKey = steamGridDBApiKey.isEmpty ? nil : steamGridDBApiKey
         config.hashDatabasePath = hashDatabasePath.isEmpty ? nil : hashDatabasePath
@@ -201,15 +199,42 @@ final class MainViewModel: ObservableObject {
 
     // MARK: - Scanning
 
-    /// Scan-on-choose: point at a directory and immediately scan it — there is no
-    /// separate "Scan" step in the redesigned UI.
-    func setScanDirectoryAndScan(_ url: URL) async {
-        scanDirectory = url.path
+    func addWatchedFolder(_ url: URL) async {
+        guard !isProcessing else { return }
+        let path = url.standardizedFileURL.path
+        guard !watchedFolders.contains(path) else {
+            showingWatchedFolderPrompt = false
+            return
+        }
+        watchedFolders.append(path)
+        showingWatchedFolderPrompt = false
+        persist()
         await scan()
     }
 
+    func removeWatchedFolders(_ paths: Set<String>) async {
+        guard !isProcessing, !paths.isEmpty else { return }
+        watchedFolders.removeAll { paths.contains($0) }
+        for path in paths {
+            config.folderPlatformRules = config.folderPlatformRules.filter {
+                $0.key != path && !$0.key.hasPrefix(path + "/")
+            }
+        }
+        if watchedFolders.isEmpty {
+            games = []
+            detectionByKey = [:]
+            selection = []
+            progressMessage = ""
+            sourceMode = .scan
+            persist()
+        } else {
+            persist()
+            await scan()
+        }
+    }
+
     func scan() async {
-        guard !scanDirectory.isEmpty else { return }
+        guard !isProcessing, !watchedFolders.isEmpty else { return }
         isProcessing = true
         operation = .scanning
         progressValue = 0
@@ -224,8 +249,34 @@ final class MainViewModel: ObservableObject {
         }
 
         do {
-            let discovered = try await scanner.scan(directory: URL(fileURLWithPath: scanDirectory)) { [weak self] fraction in
-                Task { @MainActor in self?.progressValue = fraction }
+            var discovered: [DiscoveredROM] = []
+            var discoveredPaths: Set<String> = []
+            var unavailableCount = 0
+            var lastScanError: Error?
+            let folderCount = Double(watchedFolders.count)
+            for (index, folder) in watchedFolders.enumerated() {
+                do {
+                    let folderROMs = try await scanner.scan(directory: URL(fileURLWithPath: folder)) { [weak self] fraction in
+                        let overallProgress = (Double(index) + fraction) / folderCount
+                        Task { @MainActor in self?.progressValue = overallProgress }
+                    }
+                    for rom in folderROMs {
+                        let path = rom.url.standardizedFileURL.path
+                        if discoveredPaths.insert(path).inserted {
+                            discovered.append(rom)
+                        }
+                    }
+                } catch {
+                    unavailableCount += 1
+                    lastScanError = error
+                    progressValue = Double(index + 1) / folderCount
+                }
+            }
+            if unavailableCount == watchedFolders.count, let lastScanError {
+                throw lastScanError
+            }
+            if unavailableCount == watchedFolders.count {
+                throw ROMScanner.ScanError.directoryNotReadable(URL(fileURLWithPath: watchedFolders[0]))
             }
             let hashInputs = discovered.compactMap { rom -> LocalHashInput? in
                 guard rom.platform == nil else { return nil }
@@ -257,6 +308,9 @@ final class MainViewModel: ObservableObject {
             seedArtworkHints(from: discovered)
             sourceMode = .scan
             progressMessage = "\(games.count) ROMs across \(platformCount) platforms"
+            if unavailableCount > 0 {
+                progressMessage += " · \(unavailableCount) folder unavailable"
+            }
             persist()
         } catch {
             errorMessage = "Scan failed: \(error.localizedDescription)"
@@ -1117,9 +1171,15 @@ final class MainViewModel: ObservableObject {
     }
 
     private func matchingFolderRule(for sourceDirectory: URL) -> (path: String, platformID: String)? {
-        let scanRoot = URL(fileURLWithPath: scanDirectory).standardizedFileURL.path
+        let sourcePath = sourceDirectory.standardizedFileURL.path
+        let candidateRoots = watchedFolders
+            .map { URL(fileURLWithPath: $0).standardizedFileURL.path }
+            .filter { isPath(sourcePath, inside: $0) }
+        guard let scanRoot = candidateRoots.max(by: { $0.count < $1.count }) else {
+            return nil
+        }
         var current = sourceDirectory.standardizedFileURL
-        while current.path == scanRoot || current.path.hasPrefix(scanRoot + "/") {
+        while isPath(current.path, inside: scanRoot) {
             if let platformID = config.folderPlatformRules[current.path] {
                 return (current.path, platformID)
             }
@@ -1128,6 +1188,10 @@ final class MainViewModel: ObservableObject {
             current = parent
         }
         return nil
+    }
+
+    private func isPath(_ path: String, inside root: String) -> Bool {
+        path == root || root == "/" || path.hasPrefix(root + "/")
     }
 
     private func updateGame(_ id: UUID, _ transform: (inout GameEntry) -> Void) {
