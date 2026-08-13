@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "genericRomExtensions": [".mds"],
   "platforms": [
     {
@@ -7,9 +7,10 @@
       "displayName": "NES",
       "folderAliases": ["nes", "famicom", "fc", "nintendo entertainment system"],
       "romExtensions": [".nes", ".fds", ".unf", ".unif"],
+      "supportsSingleFileZip": true,
       "libretroSystems": ["nes"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "Mesen" }
+        { "type": "standalone", "emulator": "Mesen", "supportsZip": true }
       ]
     },
     {
@@ -17,9 +18,10 @@
       "displayName": "SNES",
       "folderAliases": ["snes", "super nintendo", "sfc", "super famicom", "super nintendo entertainment system"],
       "romExtensions": [".smc", ".sfc", ".fig", ".bs", ".swc", ".st"],
+      "supportsSingleFileZip": true,
       "libretroSystems": ["super_nes"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "Snes9x" },
+        { "type": "standalone", "emulator": "Snes9x", "supportsZip": true },
         { "type": "standalone", "emulator": "bsnes" }
       ]
     },
@@ -28,6 +30,7 @@
       "displayName": "Game Boy",
       "folderAliases": ["gb", "gbc", "game boy", "gameboy", "game boy color", "gameboy color"],
       "romExtensions": [".gb", ".gbc", ".sgb"],
+      "supportsSingleFileZip": true,
       "libretroSystems": ["game_boy"],
       "emulatorOptions": [
         { "type": "standalone", "emulator": "SameBoy" }
@@ -38,9 +41,10 @@
       "displayName": "GBA",
       "folderAliases": ["gba", "game boy advance", "gameboy advance"],
       "romExtensions": [".gba", ".agb", ".srl"],
+      "supportsSingleFileZip": true,
       "libretroSystems": ["game_boy_advance"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "mGBA" },
+        { "type": "standalone", "emulator": "mGBA", "supportsZip": true },
         { "type": "standalone", "emulator": "NanoBoyAdvance" }
       ]
     },
@@ -49,9 +53,10 @@
       "displayName": "N64",
       "folderAliases": ["n64", "nintendo 64", "nintendo64"],
       "romExtensions": [".n64", ".z64", ".v64", ".ndd"],
+      "supportsSingleFileZip": true,
       "libretroSystems": ["nintendo_64"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "ares" },
+        { "type": "standalone", "emulator": "ares", "supportsZip": true },
         { "type": "standalone", "emulator": "Mupen64Plus" }
       ]
     },
@@ -153,9 +158,10 @@
       "displayName": "Genesis",
       "folderAliases": ["genesis", "megadrive", "mega drive", "md", "sega genesis", "sega megadrive", "sega mega drive"],
       "romExtensions": [".md", ".smd", ".gen", ".bin", ".68k"],
+      "supportsSingleFileZip": true,
       "libretroSystems": ["mega_drive"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "ares" }
+        { "type": "standalone", "emulator": "ares", "supportsZip": true }
       ]
     },
     {
@@ -192,7 +198,7 @@
       "chdMediaTypes": ["hardDisk"],
       "libretroSystems": ["arcade", "mame", "fb_alpha", "neogeo", "hbmame"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "MAME",
+        { "type": "standalone", "emulator": "MAME", "supportsZip": true,
           "supportedExtensions": [".zip", ".chd"] }
       ]
     },
@@ -203,7 +209,7 @@
       "romExtensions": [".zip"],
       "libretroSystems": [],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "MAME" }
+        { "type": "standalone", "emulator": "MAME", "supportsZip": true }
       ]
     },
     {
@@ -273,9 +279,10 @@
       "displayName": "MSX",
       "folderAliases": ["msx", "msx2", "msx2+", "msx turbo r"],
       "romExtensions": [".rom", ".mx1", ".mx2", ".dsk", ".cas", ".ri"],
+      "supportsSingleFileZip": true,
       "libretroSystems": ["msx"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "ares" }
+        { "type": "standalone", "emulator": "ares", "supportsZip": true }
       ]
     },
     {
@@ -304,10 +311,11 @@
       "displayName": "Atari 2600",
       "folderAliases": ["atari2600", "atari 2600", "2600", "vcs", "atari vcs"],
       "romExtensions": [".a26"],
+      "supportsSingleFileZip": true,
       "libretroSystems": ["atari_2600"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "Stella" },
-        { "type": "standalone", "emulator": "ares" }
+        { "type": "standalone", "emulator": "Stella", "supportsZip": true },
+        { "type": "standalone", "emulator": "ares", "supportsZip": true }
       ]
     },
     {
@@ -315,9 +323,10 @@
       "displayName": "Atari Lynx",
       "folderAliases": ["lynx", "atari lynx"],
       "romExtensions": [".lnx", ".lyx"],
+      "supportsSingleFileZip": true,
       "libretroSystems": ["atari_lynx"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "Mednafen" }
+        { "type": "standalone", "emulator": "Mednafen", "supportsZip": true }
       ]
     },
     {
@@ -333,10 +342,11 @@
       "displayName": "PC Engine",
       "folderAliases": ["pce", "pc engine", "pcengine", "turbografx", "turbografx-16", "turbografx 16", "tg16"],
       "romExtensions": [".pce", ".sgx"],
+      "supportsSingleFileZip": true,
       "libretroSystems": ["pc_engine"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "Mednafen" },
-        { "type": "standalone", "emulator": "ares" },
+        { "type": "standalone", "emulator": "Mednafen", "supportsZip": true },
+        { "type": "standalone", "emulator": "ares", "supportsZip": true },
         { "type": "standalone", "emulator": "Geargrafx" }
       ]
     },
@@ -345,10 +355,11 @@
       "displayName": "Neo Geo Pocket",
       "folderAliases": ["ngp", "ngpc", "neo geo pocket", "neogeo pocket", "neo geo pocket color"],
       "romExtensions": [".ngp", ".ngc", ".ngpc"],
+      "supportsSingleFileZip": true,
       "libretroSystems": ["neo_geo_pocket"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "Mednafen" },
-        { "type": "standalone", "emulator": "ares" }
+        { "type": "standalone", "emulator": "Mednafen", "supportsZip": true },
+        { "type": "standalone", "emulator": "ares", "supportsZip": true }
       ]
     },
     {
@@ -356,11 +367,12 @@
       "displayName": "Master System",
       "folderAliases": ["sms", "master system", "sega master system", "mark iii"],
       "romExtensions": [".sms"],
+      "supportsSingleFileZip": true,
       "libretroSystems": ["master_system"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "ares" },
+        { "type": "standalone", "emulator": "ares", "supportsZip": true },
         { "type": "standalone", "emulator": "Gearsystem" },
-        { "type": "standalone", "emulator": "Mednafen" }
+        { "type": "standalone", "emulator": "Mednafen", "supportsZip": true }
       ]
     },
     {
@@ -368,9 +380,10 @@
       "displayName": "Game Gear",
       "folderAliases": ["gg", "game gear", "gamegear", "sega game gear"],
       "romExtensions": [".gg"],
+      "supportsSingleFileZip": true,
       "libretroSystems": ["game_gear", "master_system"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "ares" },
+        { "type": "standalone", "emulator": "ares", "supportsZip": true },
         { "type": "standalone", "emulator": "Gearsystem" }
       ]
     },
@@ -379,10 +392,11 @@
       "displayName": "WonderSwan",
       "folderAliases": ["ws", "wsc", "wonderswan", "wonderswan color", "bandai wonderswan"],
       "romExtensions": [".ws", ".wsc"],
+      "supportsSingleFileZip": true,
       "libretroSystems": ["wonderswan"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "Mednafen" },
-        { "type": "standalone", "emulator": "ares" }
+        { "type": "standalone", "emulator": "Mednafen", "supportsZip": true },
+        { "type": "standalone", "emulator": "ares", "supportsZip": true }
       ]
     },
     {
@@ -390,9 +404,10 @@
       "displayName": "ColecoVision",
       "folderAliases": ["coleco", "colecovision"],
       "romExtensions": [".col"],
+      "supportsSingleFileZip": true,
       "libretroSystems": ["colecovision"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "ares" },
+        { "type": "standalone", "emulator": "ares", "supportsZip": true },
         { "type": "standalone", "emulator": "Gearcoleco" }
       ]
     },
@@ -401,10 +416,11 @@
       "displayName": "Virtual Boy",
       "folderAliases": ["vb", "virtualboy", "virtual boy", "nintendo virtual boy"],
       "romExtensions": [".vb", ".vboy"],
+      "supportsSingleFileZip": true,
       "libretroSystems": ["virtual_boy"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "Mednafen" },
-        { "type": "standalone", "emulator": "ares" }
+        { "type": "standalone", "emulator": "Mednafen", "supportsZip": true },
+        { "type": "standalone", "emulator": "ares", "supportsZip": true }
       ]
     },
     {

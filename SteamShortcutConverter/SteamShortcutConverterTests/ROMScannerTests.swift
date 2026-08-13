@@ -6,6 +6,7 @@
 //
 
 import XCTest
+import ZIPFoundation
 @testable import SteamShortcutConverter
 
 final class ROMScannerTests: XCTestCase {
@@ -102,6 +103,28 @@ final class ROMScannerTests: XCTestCase {
         putLE32(0x80000820, at: 28)
         data.replaceSubrange(32..<32 + marker.utf8.count, with: Data(marker.utf8))
         return try makeBinaryFile(relativePath, data: data)
+    }
+
+    @discardableResult
+    private func makeZIP(_ relativePath: String, entries: [(path: String, data: Data)]) throws -> URL {
+        let url = tempRoot.appendingPathComponent(relativePath)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let archive = try ZIPFoundation.Archive(url: url, accessMode: .create)
+        for entry in entries {
+            try archive.addEntry(
+                with: entry.path,
+                type: .file,
+                uncompressedSize: Int64(entry.data.count),
+                provider: { position, size in
+                    let lowerBound = Int(position)
+                    return entry.data.subdata(in: lowerBound..<(lowerBound + size))
+                }
+            )
+        }
+        return url
     }
 
     private func rom(_ roms: [DiscoveredROM], named name: String) -> DiscoveredROM? {
@@ -296,6 +319,105 @@ final class ROMScannerTests: XCTestCase {
         let sf2 = rom(roms, named: "sf2.zip")
         XCTAssertEqual(sf2?.romExtension, ".zip")
         XCTAssertEqual(sf2?.platform?.id, "arcade")
+    }
+
+    func testSingleROMZIPUsesInnerExtension() async throws {
+        try makeZIP(
+            "Genesis/Beyond Oasis (USA).zip",
+            entries: [("Beyond Oasis (USA).md", Data(repeating: 0x42, count: 64))]
+        )
+
+        let game = rom(try await scan(), named: "Beyond Oasis (USA).zip")
+        XCTAssertEqual(game?.romExtension, ".zip")
+        XCTAssertEqual(game?.platform?.id, "genesis")
+        XCTAssertFalse(game?.platformAmbiguous ?? true)
+        XCTAssertTrue(game?.detection?.resolvedBy?.contains("ZIP member extension") == true)
+    }
+
+    func testSingleROMZIPCanResolveWithoutPlatformFolder() async throws {
+        try makeZIP(
+            "Loose/Chrono Trigger.zip",
+            entries: [("Chrono Trigger.sfc", Data(repeating: 0x24, count: 64))]
+        )
+
+        let game = rom(try await scan(), named: "Chrono Trigger.zip")
+        XCTAssertEqual(game?.platform?.id, "snes")
+        XCTAssertFalse(game?.platformAmbiguous ?? true)
+    }
+
+    func testAmbiguousZIPMemberUsesCompatibleFolder() async throws {
+        try makeZIP(
+            "Genesis/Ambiguous.zip",
+            entries: [("Ambiguous.bin", Data(repeating: 0x17, count: 64))]
+        )
+
+        let game = rom(try await scan(), named: "Ambiguous.zip")
+        XCTAssertEqual(game?.platform?.id, "genesis")
+        XCTAssertFalse(game?.platformAmbiguous ?? true)
+    }
+
+    func testAmbiguousZIPMemberWithoutFolderStaysAmbiguous() async throws {
+        try makeZIP(
+            "Loose/Ambiguous.zip",
+            entries: [("Ambiguous.bin", Data(repeating: 0x17, count: 64))]
+        )
+
+        let game = rom(try await scan(), named: "Ambiguous.zip")
+        XCTAssertNil(game?.platform)
+        XCTAssertTrue(game?.platformAmbiguous ?? false)
+        XCTAssertEqual(game?.detection?.candidates.map(\.id), ["genesis"])
+    }
+
+    func testMultipleROMZIPIsAConflict() async throws {
+        try makeZIP(
+            "Genesis/Collection.zip",
+            entries: [
+                ("Game One.md", Data(repeating: 0x01, count: 32)),
+                ("Game Two.md", Data(repeating: 0x02, count: 32))
+            ]
+        )
+
+        let game = rom(try await scan(), named: "Collection.zip")
+        XCTAssertNil(game?.platform)
+        XCTAssertTrue(game?.platformAmbiguous ?? false)
+        XCTAssertTrue(game?.detection?.hasConflict ?? false)
+        XCTAssertTrue(game?.detection?.evidence.contains { $0.contains("multiple recognized ROMs") } == true)
+    }
+
+    func testZIPWithCartridgeROMAndDiscImageIsAConflict() async throws {
+        try makeZIP(
+            "Genesis/Mixed Collection.zip",
+            entries: [
+                ("Game.md", Data(repeating: 0x01, count: 32)),
+                ("Other Game.iso", Data(repeating: 0x02, count: 32))
+            ]
+        )
+
+        let game = rom(try await scan(), named: "Mixed Collection.zip")
+        XCTAssertNil(game?.platform)
+        XCTAssertTrue(game?.platformAmbiguous ?? false)
+        XCTAssertTrue(game?.detection?.hasConflict ?? false)
+    }
+
+    func testArcadeROMSetDoesNotUseConsoleMemberInference() async throws {
+        try makeZIP(
+            "Arcade/sf2.zip",
+            entries: [("sf2_30g.bin", Data(repeating: 0x30, count: 64))]
+        )
+
+        let game = rom(try await scan(), named: "sf2.zip")
+        XCTAssertEqual(game?.platform?.id, "arcade")
+        XCTAssertFalse(game?.platformAmbiguous ?? true)
+        XCTAssertEqual(game?.detection?.resolvedBy, "ZIP ROM-set folder")
+    }
+
+    func testUnreadableZIPDoesNotCrashOrGuessFromFolder() async throws {
+        try makeFile("Genesis/Broken.zip", contents: "not a zip archive")
+
+        let game = rom(try await scan(), named: "Broken.zip")
+        XCTAssertNil(game?.platform)
+        XCTAssertTrue(game?.platformAmbiguous ?? false)
+        XCTAssertTrue(game?.detection?.evidence.contains { $0.contains("could not be inspected") } == true)
     }
 
     func testCandidateEmulatorsPopulatedForResolvedPlatform() async throws {

@@ -25,9 +25,9 @@ Either way, once installed the app updates itself in the background (via Sparkle
 
 ## Key Features
 
-- **Direct ROM scanning**: Point it at a ROM directory and it walks the tree, identifying games and platforms. Platform is inferred folder-first (e.g. `/ROMs/SNES/…`), falling back to file extension.
+- **Direct ROM scanning**: Point it at a ROM directory and it walks the tree, identifying games and platforms. Single-ROM ZIP archives are identified from their contents without extraction; ambiguous, unreadable, or multi-ROM archives stay unresolved. Arcade ROM-set ZIPs keep their folder-based behavior.
 - **Searchable game library**: Review every game in one compact table, change its platform or emulator inline, and use status icons and filters to find included, changed, or unresolved games.
-- **Emulator resolution**: Detects installed standalone emulators and RetroArch cores, and offers every runnable option per game. Set a default emulator per platform, or override per game.
+- **Emulator resolution**: Detects installed standalone emulators and RetroArch cores, and offers every runnable option per game. ZIP games are offered only to emulators with confirmed ZIP support. Set a default emulator per platform, or override per game.
 - **Game properties editor**: Edit the display name, platform, emulator, launch file, and advanced command template in a focused inspector. Changes are saved automatically, including title edits as you type.
 - **Artwork from SteamGridDB**: Browse and choose from multiple icon results, with grid artwork as a fallback for obscure titles. Downloaded artwork is cached on disk and reused across re-scans.
 - **Live generation plan**: Every selected game is labelled **New**, **Update**, **Up to date**, or **Needs Attention** before generation. The footer reports the exact number of apps that will be created or updated.

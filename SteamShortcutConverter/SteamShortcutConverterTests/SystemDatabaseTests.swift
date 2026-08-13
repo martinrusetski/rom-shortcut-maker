@@ -122,6 +122,28 @@ final class SystemDatabaseTests: XCTestCase {
         XCTAssertFalse(play?.supports(extension: ".mds") == true)
     }
 
+    func testZIPCompatibilityIsExplicitPerEmulator() {
+        let snesOptions = database.emulatorOptions(for: Platform(id: "snes", displayName: "SNES"))
+        let snes9x = snesOptions.first { $0.choice == .standalone(.snes9x) }
+        let bsnes = snesOptions.first { $0.choice == .standalone(.bsnes) }
+        XCTAssertTrue(snes9x?.supports(extension: ".zip") == true)
+        XCTAssertFalse(bsnes?.supports(extension: ".zip") == true)
+
+        let ps2Options = database.emulatorOptions(for: Platform(id: "ps2", displayName: "PS2"))
+        let pcsx2 = ps2Options.first { $0.choice == .standalone(.pcsx2) }
+        XCTAssertFalse(pcsx2?.supports(extension: ".zip") == true)
+    }
+
+    func testSingleFileZIPPlatformsAreExplicit() {
+        XCTAssertTrue(database.supportsSingleFileZIP(for: Platform(id: "genesis", displayName: "Genesis")))
+        XCTAssertFalse(database.supportsSingleFileZIP(for: Platform(id: "ps1", displayName: "PlayStation")))
+
+        // Arcade ZIPs are ROM sets, not single compressed console ROMs, but MAME
+        // still launches the archive directly.
+        XCTAssertFalse(database.supportsSingleFileZIP(for: Platform(id: "arcade", displayName: "Arcade")))
+        XCTAssertTrue(database.supportsZIPLaunch(for: Platform(id: "arcade", displayName: "Arcade")))
+    }
+
     // MARK: - Emulator options
 
     func testSnesStandaloneOptions() {

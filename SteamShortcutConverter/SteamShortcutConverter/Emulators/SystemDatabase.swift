@@ -32,22 +32,26 @@ struct EmulatorOption: Equatable, Hashable {
     let choice: EmulatorChoice      // .standalone(type) or .retroArchCore(core)
     let displayName: String         // "Snes9x" or "bsnes (RetroArch)"
     let supportedExtensions: Set<String>?
+    let supportsZIP: Bool
 
     init(
         choice: EmulatorChoice,
         displayName: String,
-        supportedExtensions: Set<String>? = nil
+        supportedExtensions: Set<String>? = nil,
+        supportsZIP: Bool = false
     ) {
         self.choice = choice
         self.displayName = displayName
         self.supportedExtensions = supportedExtensions
+        self.supportsZIP = supportsZIP
     }
 
     /// An omitted rule means the database has no format restriction for this
     /// option. Explicit rules are normalized with a leading dot.
     func supports(extension ext: String) -> Bool {
-        guard let supportedExtensions else { return true }
         let normalized = ext.lowercased().hasPrefix(".") ? ext.lowercased() : "." + ext.lowercased()
+        if normalized == ".zip" { return supportsZIP }
+        guard let supportedExtensions else { return true }
         return supportedExtensions.contains(normalized)
     }
 }
@@ -97,6 +101,7 @@ final class SystemDatabase {
         let chdMaxLogicalBytes: UInt64?
         let emulatorOptions: [OptionRecord]
         let libretroSystems: [String]?
+        let supportsSingleFileZip: Bool?
     }
 
     private struct OptionRecord: Decodable {
@@ -105,6 +110,7 @@ final class SystemDatabase {
         let core: String?
         let displayName: String?
         let supportedExtensions: [String]?
+        let supportsZip: Bool?
     }
 
     private struct EmulatorRecord: Decodable {
@@ -251,14 +257,16 @@ final class SystemDatabase {
                 return EmulatorOption(
                     choice: .standalone(type),
                     displayName: option.displayName ?? emulator,
-                    supportedExtensions: normalizedSupportedExtensions(option.supportedExtensions)
+                    supportedExtensions: normalizedSupportedExtensions(option.supportedExtensions),
+                    supportsZIP: option.supportsZip ?? false
                 )
             case "retroArchCore":
                 guard let core = option.core else { return nil }
                 return EmulatorOption(
                     choice: .retroArchCore(core: core),
                     displayName: option.displayName ?? core,
-                    supportedExtensions: normalizedSupportedExtensions(option.supportedExtensions)
+                    supportedExtensions: normalizedSupportedExtensions(option.supportedExtensions),
+                    supportsZIP: option.supportsZip ?? false
                 )
             default:
                 return nil
@@ -286,6 +294,24 @@ final class SystemDatabase {
     /// cores are matched to platforms by these (see EmulatorConfigManager).
     func libretroSystems(for platform: Platform) -> [String] {
         platformRecords.first(where: { $0.id == platform.id })?.libretroSystems ?? []
+    }
+
+    /// Whether a ZIP containing one cartridge-style ROM can be classified and
+    /// launched for this platform. ROM-set ZIPs such as MAME are represented by
+    /// a literal `.zip` entry in `romExtensions` instead.
+    func supportsSingleFileZIP(for platform: Platform) -> Bool {
+        platformRecords.first(where: { $0.id == platform.id })?.supportsSingleFileZip ?? false
+    }
+
+    /// RetroArch handles ZIP extraction at the frontend layer. It is safe to
+    /// offer a core for platforms that use single-ROM archives, plus platforms
+    /// where the ZIP itself is the native ROM-set format.
+    func supportsZIPLaunch(for platform: Platform) -> Bool {
+        guard let record = platformRecords.first(where: { $0.id == platform.id }) else {
+            return false
+        }
+        return record.supportsSingleFileZip == true
+            || record.romExtensions.contains { normalizeExtension($0) == ".zip" }
     }
 
     /// The union of all ROM extensions known to any platform (normalized,

@@ -163,7 +163,8 @@ final class EmulatorConfigManager {
                 for core in installedCores where (core.systemId.map { systems.contains($0) } ?? false) {
                     options.append(EmulatorOption(
                         choice: .retroArchCore(core: core.filename),
-                        displayName: core.displayName
+                        displayName: core.displayName,
+                        supportsZIP: database.supportsZIPLaunch(for: platform)
                     ))
                 }
             }
@@ -172,8 +173,8 @@ final class EmulatorConfigManager {
         return options
     }
 
-    /// Format-aware availability for a specific launch image. Options without an
-    /// explicit compatibility rule remain available.
+    /// Format-aware availability for a specific launch image. ZIP support is
+    /// opt-in; other formats preserve the existing allow-list behavior.
     func availableOptions(for platform: Platform, romExtension: String) -> [EmulatorOption] {
         availableOptions(for: platform).filter { $0.supports(extension: romExtension) }
     }

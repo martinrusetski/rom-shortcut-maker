@@ -98,10 +98,12 @@ final class ROMScanner: ROMScanning {
     private let filenameParser: ROMFilenameParser
     private let chdInspector = CHDImageInspector()
     private let discContentInspector = DiscContentInspector()
+    private let zipContentInspector: ZIPContentInspector
 
     init(database: SystemDatabase) {
         self.database = database
         self.filenameParser = ROMFilenameParser(platformAliases: database.allFolderAliases)
+        self.zipContentInspector = ZIPContentInspector(database: database)
     }
 
     func scan(directory: URL,
@@ -356,6 +358,7 @@ final class ROMScanner: ROMScanning {
                 : "Extension \(extensionLabel) candidates: \(byExtension.map(\.displayName).joined(separator: ", "))."
         ]
         var candidates = byExtension
+        var archiveNeedsDisambiguation = false
 
         func info(
             candidates: [Platform],
@@ -373,11 +376,60 @@ final class ROMScanner: ROMScanning {
             return result
         }
 
-        if byExtension.count == 1 {
+        if byExtension.count == 1 && extensionName != ".zip" {
             return (byExtension[0], false, info(
                 candidates: byExtension,
                 resolvedBy: "unique extension \(extensionLabel)"
             ))
+        }
+
+        if extensionName == ".zip" {
+            // Arcade and Model 2 ZIPs are ROM sets whose many members are chip
+            // dumps, not alternative console games. A matching folder is the
+            // decisive signal and must bypass single-ROM archive inspection.
+            if let folderPlatform = inferPlatform(for: url, root: root),
+               byExtension.contains(where: { $0.id == folderPlatform.id }) {
+                evidence.append("ZIP ROM-set folder: \(folderPlatform.displayName).")
+                return (folderPlatform, false, info(
+                    candidates: [folderPlatform],
+                    resolvedBy: "ZIP ROM-set folder"
+                ))
+            }
+
+            switch zipContentInspector.inspect(url: url) {
+            case .singleROM(let member):
+                evidence.append(
+                    "ZIP member \(member.path) has extension \(member.fileExtension)."
+                )
+                candidates = member.archiveCandidates
+                if member.hasUniquePlatformMeaning, let platform = candidates.first {
+                    return (platform, false, info(
+                        candidates: candidates,
+                        resolvedBy: "ZIP member extension \(member.fileExtension)"
+                    ))
+                }
+                archiveNeedsDisambiguation = true
+                evidence.append(
+                    "ZIP member extension \(member.fileExtension) requires a compatible folder signal."
+                )
+
+            case .multipleROMs(let members):
+                let names = members.map(\.path).joined(separator: ", ")
+                let platformIDs = Set(members.flatMap { $0.archiveCandidates.map(\.id) })
+                let conflictingCandidates = database.allPlatforms.filter { platformIDs.contains($0.id) }
+                evidence.append("ZIP contains multiple recognized ROMs: \(names).")
+                return (nil, true, info(
+                    candidates: conflictingCandidates,
+                    resolvedBy: nil,
+                    hasConflict: true
+                ))
+
+            case .noRecognizedROM:
+                evidence.append("ZIP contains no recognized single-file console ROM.")
+
+            case .unreadable(let reason):
+                evidence.append("ZIP could not be inspected: \(reason)")
+            }
         }
 
         if extensionName == ".m3u", playlistDepth < 4,
@@ -449,7 +501,11 @@ final class ROMScanner: ROMScanning {
                 hasConflict: true
             ))
         }
-        return (nil, candidates.count > 1, info(candidates: candidates, resolvedBy: nil))
+        return (
+            nil,
+            archiveNeedsDisambiguation || candidates.count > 1,
+            info(candidates: candidates, resolvedBy: nil)
+        )
     }
 
     /// A playlist has no useful payload of its own. Resolve the listed disc

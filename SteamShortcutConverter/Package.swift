@@ -26,12 +26,16 @@ let package = Package(
         // .app by hand (embed-sparkle.sh) using an @executable_path/../Frameworks
         // rpath, mirroring the layout Xcode would produce.
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
+        // ZIPFoundation lets the scanner inspect archive entries without
+        // extracting ROMs to disk.
+        .package(url: "https://github.com/weichsel/ZIPFoundation.git", exact: "0.9.20"),
     ],
     targets: [
         .executableTarget(
             name: "SteamShortcutConverter",
             dependencies: [
                 .product(name: "Sparkle", package: "Sparkle"),
+                .product(name: "ZIPFoundation", package: "ZIPFoundation"),
             ],
             path: "SteamShortcutConverter",
             exclude: [
@@ -52,7 +56,10 @@ let package = Package(
             ]),
         .testTarget(
             name: "SteamShortcutConverterTests",
-            dependencies: ["SteamShortcutConverter"],
+            dependencies: [
+                "SteamShortcutConverter",
+                .product(name: "ZIPFoundation", package: "ZIPFoundation")
+            ],
             path: "SteamShortcutConverterTests",
             exclude: [
                 "Fixtures/README.md"

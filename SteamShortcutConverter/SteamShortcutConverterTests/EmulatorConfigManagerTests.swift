@@ -65,6 +65,30 @@ final class EmulatorConfigManagerTests: XCTestCase {
         XCTAssertFalse(choices.contains(.retroArchCore(core: "bsnes_libretro.dylib"))) // core absent
     }
 
+    func testZIPAvailabilityIncludesOnlyConfirmedOptions() {
+        let manager = EmulatorConfigManager(
+            database: database, detector: makeStandardDetector(),
+            store: InMemoryEmulatorConfigStore()
+        )
+
+        let choices = manager.availableOptions(for: snes, romExtension: ".zip").map { $0.choice }
+        XCTAssertTrue(choices.contains(.standalone(.snes9x)))
+        XCTAssertTrue(choices.contains(.retroArchCore(core: "snes9x_libretro.dylib")))
+    }
+
+    func testZIPAvailabilityRejectsStandaloneWithoutExplicitSupport() {
+        let manager = EmulatorConfigManager(
+            database: database, detector: makeEmptyDetector(),
+            store: InMemoryEmulatorConfigStore()
+        )
+        manager.setPath("/Applications/bsnes.app", for: .bsnes)
+
+        XCTAssertTrue(manager.availableOptions(for: snes).contains { $0.choice == .standalone(.bsnes) })
+        XCTAssertFalse(manager.availableOptions(for: snes, romExtension: ".zip").contains {
+            $0.choice == .standalone(.bsnes)
+        })
+    }
+
     func testNothingInstalledYieldsNoOptionsAndNilDefault() {
         let manager = EmulatorConfigManager(
             database: database, detector: makeEmptyDetector(),
