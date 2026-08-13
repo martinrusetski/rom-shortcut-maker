@@ -18,6 +18,7 @@ VERSION="${1:-0.0.0-dev}"
 
 echo "Building..."
 ( cd "$PKG_DIR" && swift build -c release --arch arm64 )
+BIN_DIR="$(cd "$PKG_DIR" && swift build -c release --arch arm64 --show-bin-path)"
 
 echo "Creating app bundle..."
 rm -rf "${SCRIPT_DIR}/${APP_NAME}.app"
@@ -25,16 +26,24 @@ APP="${SCRIPT_DIR}/${APP_NAME}.app"
 mkdir -p "$APP/Contents/MacOS"
 mkdir -p "$APP/Contents/Resources"
 
-BINARY="$(find "$PKG_DIR/.build" -name "$BINARY_NAME" -type f -path '*release*' | grep -v dSYM | head -1)"
+BINARY="$BIN_DIR/$BINARY_NAME"
 cp "$BINARY" "$APP/Contents/MacOS/${BINARY_NAME}"
 
 # The app loads emulators.json via Bundle.module, which resolves the SwiftPM
 # resource bundle relative to Bundle.main.resourceURL (Contents/Resources).
-RES_BUNDLE="$(find "$PKG_DIR/.build" -name '*.bundle' -type d -path '*release*' | head -1)"
-if [ -n "$RES_BUNDLE" ]; then
-    ditto "$RES_BUNDLE" "$APP/Contents/Resources/$(basename "$RES_BUNDLE")"
-else
-    echo "WARNING: SwiftPM resource bundle not found; emulators.json will be missing" >&2
+APP_RESOURCE_BUNDLE="$BIN_DIR/SteamShortcutConverter_SteamShortcutConverter.bundle"
+if [ ! -d "$APP_RESOURCE_BUNDLE" ]; then
+    echo "Error: App resource bundle was not found at $APP_RESOURCE_BUNDLE" >&2
+    exit 1
+fi
+for RESOURCE_BUNDLE in "$BIN_DIR"/*.bundle; do
+    [ -d "$RESOURCE_BUNDLE" ] || continue
+    ditto "$RESOURCE_BUNDLE" "$APP/Contents/Resources/$(basename "$RESOURCE_BUNDLE")"
+done
+
+if [ ! -f "$APP/Contents/Resources/SteamShortcutConverter_SteamShortcutConverter.bundle/Contents/Resources/emulators.json" ]; then
+    echo "Error: Packaged app is missing emulators.json" >&2
+    exit 1
 fi
 
 # App icon: compile Assets.xcassets only if the AppIcon set actually has images.

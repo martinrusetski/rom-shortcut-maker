@@ -34,7 +34,8 @@ jobs:
       - name: Create app bundle
         run: |
           APP_BUNDLE="$APP_NAME.app"
-          BINARY="$(find "$PKG_DIR/.build" -name "$BINARY_NAME" -type f -path '*release*' | grep -v dSYM | head -1)"
+          BIN_DIR="$(cd "$PKG_DIR" && swift build -c release --arch arm64 --show-bin-path)"
+          BINARY="$BIN_DIR/$BINARY_NAME"
           VERSION="${{ github.ref_name }}"
           VERSION="${VERSION#v}"
           SPARKLE_PUB_KEY="$(tr -d '[:space:]' < sparkle_public_key.txt)"
@@ -47,11 +48,18 @@ jobs:
 
           # The app loads emulators.json via Bundle.module, which resolves the
           # SwiftPM resource bundle relative to Contents/Resources.
-          RES_BUNDLE="$(find "$PKG_DIR/.build" -name '*.bundle' -type d -path '*release*' | head -1)"
-          if [ -n "$RES_BUNDLE" ]; then
-              ditto "$RES_BUNDLE" "$APP_BUNDLE/Contents/Resources/$(basename "$RES_BUNDLE")"
-          else
-              echo "::error::SwiftPM resource bundle not found; emulators.json would be missing"
+          APP_RESOURCE_BUNDLE="$BIN_DIR/SteamShortcutConverter_SteamShortcutConverter.bundle"
+          if [ ! -d "$APP_RESOURCE_BUNDLE" ]; then
+              echo "::error::App resource bundle not found at $APP_RESOURCE_BUNDLE"
+              exit 1
+          fi
+          for RESOURCE_BUNDLE in "$BIN_DIR"/*.bundle; do
+              [ -d "$RESOURCE_BUNDLE" ] || continue
+              ditto "$RESOURCE_BUNDLE" "$APP_BUNDLE/Contents/Resources/$(basename "$RESOURCE_BUNDLE")"
+          done
+
+          if [ ! -f "$APP_BUNDLE/Contents/Resources/SteamShortcutConverter_SteamShortcutConverter.bundle/Contents/Resources/emulators.json" ]; then
+              echo "::error::Packaged app is missing emulators.json"
               exit 1
           fi
 

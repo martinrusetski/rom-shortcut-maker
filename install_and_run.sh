@@ -54,12 +54,20 @@ echo "Creating app bundle..."
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BINARY" "$APP/Contents/MacOS/$BINARY_NAME"
 
-RESOURCE_BUNDLE="$(find "$BIN_DIR" -maxdepth 1 -type d -name '*.bundle' -print -quit)"
-if [ -z "$RESOURCE_BUNDLE" ]; then
-    echo "Error: SwiftPM resource bundle was not found in $BIN_DIR" >&2
+APP_RESOURCE_BUNDLE="$BIN_DIR/SteamShortcutConverter_SteamShortcutConverter.bundle"
+if [ ! -d "$APP_RESOURCE_BUNDLE" ]; then
+    echo "Error: App resource bundle was not found at $APP_RESOURCE_BUNDLE" >&2
     exit 1
 fi
-ditto "$RESOURCE_BUNDLE" "$APP/Contents/Resources/$(basename "$RESOURCE_BUNDLE")"
+for RESOURCE_BUNDLE in "$BIN_DIR"/*.bundle; do
+    [ -d "$RESOURCE_BUNDLE" ] || continue
+    ditto "$RESOURCE_BUNDLE" "$APP/Contents/Resources/$(basename "$RESOURCE_BUNDLE")"
+done
+
+if [ ! -f "$APP/Contents/Resources/SteamShortcutConverter_SteamShortcutConverter.bundle/Contents/Resources/emulators.json" ]; then
+    echo "Error: Packaged app is missing emulators.json" >&2
+    exit 1
+fi
 
 SPARKLE_PUB_KEY="$(tr -d '[:space:]' < "$SCRIPT_DIR/sparkle_public_key.txt" 2>/dev/null || true)"
 SPARKLE_FEED_URL="https://raw.githubusercontent.com/martinrusetski/rom-shortcut-maker/main/appcast.xml"
