@@ -124,6 +124,7 @@ final class EmulatorDetectorTests: XCTestCase {
         fs.fileContents[infoDir.appendingPathComponent("mednafen_saturn_libretro.info").path] = """
         display_name = "Sega - Saturn (Beetle Saturn)"
         systemid = "sega_saturn"
+        supported_extensions = "cue|chd|iso|/"
         """
         let detector = EmulatorDetector(
             database: database, fs: fs,
@@ -135,6 +136,7 @@ final class EmulatorDetectorTests: XCTestCase {
         XCTAssertEqual(cores.first?.filename, "mednafen_saturn_libretro.dylib")
         XCTAssertEqual(cores.first?.systemId, "sega_saturn")
         XCTAssertEqual(cores.first?.displayName, "Sega - Saturn (Beetle Saturn)")
+        XCTAssertEqual(cores.first?.supportedExtensions, [".cue", ".chd", ".iso"])
     }
 
     // MARK: - Real Info.plist parsing (DefaultAppDiscovering)

@@ -669,4 +669,114 @@ final class ROMScannerTests: XCTestCase {
         XCTAssertEqual(roms.count, 1)
         XCTAssertEqual(roms[0].titleHint, "Some Game")
     }
+
+    // MARK: - DOS packages
+
+    /// A complete five-byte DOS .COM program: move 4C00h into AX, then invoke
+    /// interrupt 21h to terminate successfully. It is executable fixture data,
+    /// not a renamed text placeholder.
+    private var minimalDOSCOM: Data {
+        Data([0xB8, 0x00, 0x4C, 0xCD, 0x21])
+    }
+
+    func testDOSFolderBecomesOneGameAndSelectsNamedProgram() async throws {
+        try makeBinaryFile("DOS/Doom/DOOM.COM", data: minimalDOSCOM)
+        try makeFile("DOS/Doom/SETUP.EXE")
+
+        let roms = try await scan()
+        let game = try XCTUnwrap(rom(roms, named: "Doom"))
+        let package = try XCTUnwrap(game.dosPackage)
+
+        XCTAssertEqual(roms.count, 1)
+        XCTAssertEqual(game.platform?.id, "dos")
+        XCTAssertEqual(game.url.lastPathComponent, "Doom")
+        XCTAssertEqual(package.kind, .folder)
+        XCTAssertEqual(package.selectedLaunchURL?.lastPathComponent, "DOOM.COM")
+        XCTAssertEqual(package.utilityCandidates.map(\.url.lastPathComponent), ["SETUP.EXE"])
+        XCTAssertEqual(game.memberFiles.count, 2)
+    }
+
+    func testDOSFolderRequiresChoiceWhenStartupIsAmbiguous() async throws {
+        try makeFile("MS-DOS/Ambiguous/ONE.EXE")
+        try makeFile("MS-DOS/Ambiguous/TWO.EXE")
+
+        let roms = try await scan()
+        let game = try XCTUnwrap(rom(roms, named: "Ambiguous"))
+        let package = try XCTUnwrap(game.dosPackage)
+        XCTAssertNil(package.selectedLaunchURL)
+        XCTAssertTrue(package.requiresLaunchSelection)
+        XCTAssertEqual(package.launchCandidates.count, 2)
+    }
+
+    func testDOSBoxConfigurationWithAutoexecWinsOverPrograms() async throws {
+        try makeFile("DOS/Configured/dosbox.conf", contents: """
+        [sdl]
+        fullscreen=true
+        [autoexec]
+        mount c .
+        c:
+        GAME.EXE
+        """)
+        try makeFile("DOS/Configured/GAME.EXE")
+        try makeFile("DOS/Configured/ALTERNATE.EXE")
+
+        let roms = try await scan()
+        let game = try XCTUnwrap(rom(roms, named: "Configured"))
+        XCTAssertEqual(game.dosPackage?.selectedLaunchURL?.lastPathComponent, "dosbox.conf")
+        XCTAssertEqual(game.dosPackage?.configurationHasAutoexec, true)
+    }
+
+    func testDOSConfigurationWithoutAutoexecIsRunnableButWarned() async throws {
+        try makeFile("DOS/Manual/dosbox.conf", contents: "[sdl]\nfullscreen=true\n")
+
+        let roms = try await scan()
+        let game = try XCTUnwrap(rom(roms, named: "Manual"))
+        XCTAssertEqual(game.dosPackage?.selectedLaunchURL?.lastPathComponent, "dosbox.conf")
+        XCTAssertEqual(game.dosPackage?.configurationHasAutoexec, false)
+        XCTAssertNotNil(game.dosPackage?.warning)
+        XCTAssertNil(game.dosPackage?.blockingIssue)
+    }
+
+    func testLooseDOSZUsesRealArchiveInspection() async throws {
+        try makeZIP("Loose/Commander Keen.dosz", entries: [
+            ("KEEN/KEEN.COM", minimalDOSCOM),
+            ("KEEN/README.TXT", Data("fixture".utf8))
+        ])
+
+        let roms = try await scan()
+        let game = try XCTUnwrap(rom(roms, named: "Commander Keen.dosz"))
+        XCTAssertEqual(game.platform?.id, "dos")
+        XCTAssertEqual(game.dosPackage?.kind, .archive)
+        XCTAssertEqual(game.dosPackage?.archiveExecutableCount, 1)
+        XCTAssertNil(game.dosPackage?.blockingIssue)
+    }
+
+    func testCorruptDOSArchiveIsRetainedWithBlockingIssue() async throws {
+        try makeFile("DOS/Broken.dosz", contents: "not a zip")
+
+        let roms = try await scan()
+        let game = try XCTUnwrap(rom(roms, named: "Broken.dosz"))
+        XCTAssertEqual(game.dosPackage?.kind, .archive)
+        XCTAssertNotNil(game.dosPackage?.blockingIssue)
+    }
+
+    func testDOSCuePackageKeepsCompanionTrack() async throws {
+        try makeFile("DOS/CD Game/game.cue", contents: """
+        FILE "track.bin" BINARY
+          TRACK 01 MODE1/2352
+            INDEX 01 00:00:00
+        """)
+        try makeBinaryFile("DOS/CD Game/track.bin", data: Data(repeating: 0, count: 32))
+
+        let roms = try await scan()
+        let game = try XCTUnwrap(rom(roms, named: "CD Game"))
+        XCTAssertEqual(game.dosPackage?.selectedLaunchURL?.lastPathComponent, "game.cue")
+        XCTAssertTrue(game.memberFiles.contains { $0.lastPathComponent == "track.bin" })
+    }
+
+    func testArbitraryExecutableOutsideDOSRootIsIgnored() async throws {
+        try makeFile("Downloads/WindowsTool.exe")
+        let roms = try await scan()
+        XCTAssertTrue(roms.isEmpty)
+    }
 }

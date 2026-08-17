@@ -69,6 +69,9 @@ struct GamePropertiesView: View {
                 Divider()
                 Form {
                     GameSettingsSection(viewModel: viewModel, game: game)
+                    if game.dosPackage != nil {
+                        DOSPackageSection(viewModel: viewModel, game: game)
+                    }
                     LaunchSection(viewModel: viewModel, game: game)
                     AdvancedSection(viewModel: viewModel, game: game)
                 }
@@ -289,14 +292,12 @@ private struct GameSettingsSection: View {
             let options = viewModel.availableOptions(for: game)
             if options.isEmpty {
                 HStack {
-                    Label(
-                        game.platform.id == "unknown"
-                            ? "Assign a platform before choosing an emulator"
-                            : "No compatible emulator installed",
-                        systemImage: "exclamationmark.triangle.fill")
+                    Label(emptyOptionsMessage, systemImage: "exclamationmark.triangle.fill")
                         .foregroundColor(.orange)
                     Spacer()
-                    Button("Open Settings…") { openSettingsWindow() }
+                    if game.status != .needsLaunchTarget && game.status != .invalidSource {
+                        Button("Open Settings…") { openSettingsWindow() }
+                    }
                 }
             } else {
                 HStack {
@@ -321,8 +322,136 @@ private struct GameSettingsSection: View {
         return isDefault ? "\(option.displayName) - platform default" : option.displayName
     }
 
+    private var emptyOptionsMessage: String {
+        switch game.status {
+        case .unknownPlatform: return "Assign a platform before choosing an emulator"
+        case .needsLaunchTarget: return "Choose what to launch below"
+        case .invalidSource: return "This game package cannot be launched"
+        case .noEmulator, .ready: return "No compatible emulator installed"
+        }
+    }
+
     private func openSettingsWindow() {
         NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+    }
+}
+
+// MARK: - DOS package
+
+private struct DOSPackageSection: View {
+    @ObservedObject var viewModel: MainViewModel
+    let game: GameEntry
+
+    private var package: DOSPackageInfo? { game.dosPackage }
+
+    var body: some View {
+        if let package {
+            Section("DOS Game") {
+                LabeledContent("Package") {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(package.kind.displayName)
+                        Text(memberDescription(package))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if package.kind == .folder, !package.launchCandidates.isEmpty {
+                    HStack {
+                        Picker("Starts with", selection: Binding<URL?>(
+                            get: { package.selectedLaunchURL },
+                            set: { if let url = $0 { viewModel.setDOSLaunchTarget(url, for: game) } }
+                        )) {
+                            if package.selectedLaunchURL == nil {
+                                Text("Choose…").tag(Optional<URL>.none)
+                            }
+                            ForEach(package.launchCandidates) { candidate in
+                                Text(candidateLabel(candidate)).tag(Optional(candidate.url))
+                            }
+                        }
+                        RevertButton(isVisible: viewModel.hasOverride(.dosLaunchTarget, for: game)) {
+                            viewModel.resetOverride(.dosLaunchTarget, for: game)
+                        }
+                    }
+                } else {
+                    LabeledContent("Startup") {
+                        Text(startupDescription(package))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if !package.utilityCandidates.isEmpty {
+                    LabeledContent("Utilities") {
+                        Menu("Run Utility") {
+                            ForEach(package.utilityCandidates) { utility in
+                                Button(utility.displayName) {
+                                    viewModel.testLaunch(game, launchURL: utility.url)
+                                }
+                                .disabled(!viewModel.canTestLaunch(game, launchURL: utility.url))
+                            }
+                        }
+                    }
+                }
+
+                if let issue = package.blockingIssue {
+                    Label(issue, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                } else if let warning = package.warning {
+                    Label(warning, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                } else if package.kind == .archive {
+                    Text("Choose the game program in DOSBox on first launch. DOSBox Pure remembers that choice for this archive.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if package.kind == .diskImage {
+                    Text("DOSBox opens its boot or installation menu for this image.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack {
+                    Spacer()
+                    Button(testButtonTitle(package)) {
+                        if let updated = viewModel.game(id: game.id) {
+                            viewModel.testLaunch(updated)
+                        }
+                    }
+                    .disabled(game.status != .ready)
+                }
+            }
+        }
+    }
+
+    private func memberDescription(_ package: DOSPackageInfo) -> String {
+        if let count = package.archiveExecutableCount {
+            return "\(count) launchable item\(count == 1 ? "" : "s")"
+        }
+        return "\(package.memberCount) file\(package.memberCount == 1 ? "" : "s")"
+    }
+
+    private func startupDescription(_ package: DOSPackageInfo) -> String {
+        switch package.kind {
+        case .archive: return "DOSBox menu"
+        case .diskImage: return "Boot or install image"
+        case .configuration: return game.launchPath.lastPathComponent
+        case .executable: return game.launchPath.lastPathComponent
+        case .folder: return package.selectedLaunchURL?.lastPathComponent ?? "Choose what to launch"
+        }
+    }
+
+    private func candidateLabel(_ candidate: DOSLaunchCandidate) -> String {
+        switch candidate.kind {
+        case .configuration: return "\(candidate.displayName) - configuration"
+        case .media: return "\(candidate.displayName) - disk image"
+        case .batch: return "\(candidate.displayName) - batch file"
+        case .program, .utility: return candidate.displayName
+        }
+    }
+
+    private func testButtonTitle(_ package: DOSPackageInfo) -> String {
+        package.kind == .archive || package.kind == .diskImage ? "Set Up & Test" : "Test Launch"
     }
 }
 
@@ -366,7 +495,9 @@ private struct LaunchSection: View {
 
             LabeledContent("Location") {
                 HStack {
-                    Text(game.romPath.deletingLastPathComponent().path)
+                    Text(game.dosPackage?.kind == .folder
+                         ? game.romPath.path
+                         : game.romPath.deletingLastPathComponent().path)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .foregroundColor(.secondary)

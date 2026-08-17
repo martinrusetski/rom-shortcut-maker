@@ -117,6 +117,10 @@ struct InstalledCore: Equatable {
     let url: URL             // full path to the .dylib
     let displayName: String  // from .info (display_name / corename), else derived
     let systemId: String?    // from .info `systemid`, e.g. "sega_saturn"
+    /// Formats declared by the core's `supported_extensions` metadata. Nil means
+    /// the info file omitted the field; an empty set means it explicitly supports
+    /// no file extensions.
+    let supportedExtensions: Set<String>?
 }
 
 // MARK: - EmulatorDetector
@@ -208,7 +212,8 @@ final class EmulatorDetector {
                     filename: filename,
                     url: dylib,
                     displayName: info.displayName ?? prettyCoreName(base),
-                    systemId: info.systemId
+                    systemId: info.systemId,
+                    supportedExtensions: info.supportedExtensions
                 ))
             }
         }
@@ -219,15 +224,25 @@ final class EmulatorDetector {
 
     // MARK: - Core info
 
-    private func readCoreInfo(base: String, in directories: [URL]) -> (displayName: String?, systemId: String?) {
+    private func readCoreInfo(
+        base: String,
+        in directories: [URL]
+    ) -> (displayName: String?, systemId: String?, supportedExtensions: Set<String>?) {
         for directory in directories {
             let infoURL = directory.appendingPathComponent("\(base).info")
             guard let text = fs.readText(at: infoURL) else { continue }
             let display = infoField("display_name", in: text) ?? infoField("corename", in: text)
             let systemId = infoField("systemid", in: text)
-            return (display, systemId)
+            let extensions = infoField("supported_extensions", in: text).map { value in
+                Set(value.split(separator: "|").compactMap { raw -> String? in
+                    let ext = String(raw).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    guard !ext.isEmpty, ext != "/" else { return nil }
+                    return ext.hasPrefix(".") ? ext : "." + ext
+                })
+            }
+            return (display, systemId, extensions)
         }
-        return (nil, nil)
+        return (nil, nil, nil)
     }
 
     private func infoField(_ key: String, in text: String) -> String? {

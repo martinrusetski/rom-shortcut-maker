@@ -166,6 +166,7 @@ final class EmulatorConfigManager {
                             for: .retroArchCore(core: core.filename),
                             platform: platform
                         ),
+                        supportedExtensions: core.supportedExtensions,
                         supportsZIP: database.supportsZIPLaunch(for: platform)
                     ))
                 }
@@ -205,12 +206,24 @@ final class EmulatorConfigManager {
 
     /// Resolve a choice to concrete launch inputs, or nil if it isn't runnable.
     func resolve(_ choice: EmulatorChoice, for platform: Platform) -> ResolvedLaunch? {
+        resolve(choice, for: platform, romExtension: "")
+    }
+
+    func resolve(
+        _ choice: EmulatorChoice,
+        for platform: Platform,
+        romExtension: String
+    ) -> ResolvedLaunch? {
         switch choice {
         case .standalone(let type):
             guard let path = emulatorPath(for: type) else { return nil }
             return ResolvedLaunch(
                 emulatorPath: path,
-                launchArguments: database.launchArguments(for: choice, platform: platform),
+                launchArguments: database.launchArguments(
+                    for: choice,
+                    platform: platform,
+                    romExtension: romExtension
+                ),
                 corePath: nil
             )
         case .retroArchCore(let core):
@@ -221,7 +234,11 @@ final class EmulatorConfigManager {
                 ?? coresDirectory().appendingPathComponent(core)
             return ResolvedLaunch(
                 emulatorPath: path,
-                launchArguments: database.launchArguments(for: choice, platform: platform),
+                launchArguments: database.launchArguments(
+                    for: choice,
+                    platform: platform,
+                    romExtension: romExtension
+                ),
                 corePath: corePath
             )
         }

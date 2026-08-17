@@ -40,6 +40,8 @@ struct DiscoveredROM: Equatable {
     /// Bundled artwork discovered next to the ROM (e.g. a PS3 ICON0.PNG),
     /// seeded into the artwork cache when no cached artwork exists yet.
     let artworkHint: URL?
+    /// DOS-only package metadata. Nil for conventional single-file ROMs.
+    let dosPackage: DOSPackageInfo?
 
     init(
         url: URL,
@@ -54,7 +56,8 @@ struct DiscoveredROM: Equatable {
         discPaths: [URL] = [],
         discCount: Int? = nil,
         titleHint: String? = nil,
-        artworkHint: URL? = nil
+        artworkHint: URL? = nil,
+        dosPackage: DOSPackageInfo? = nil
     ) {
         self.url = url
         self.fileSize = fileSize
@@ -69,6 +72,7 @@ struct DiscoveredROM: Equatable {
         self.discCount = discCount
         self.titleHint = titleHint
         self.artworkHint = artworkHint
+        self.dosPackage = dosPackage
     }
 }
 
@@ -99,6 +103,7 @@ final class ROMScanner: ROMScanning {
     private let chdInspector = CHDImageInspector()
     private let discContentInspector = DiscContentInspector()
     private let zipContentInspector: ZIPContentInspector
+    private let dosPackageInspector = DOSPackageInspector()
 
     init(database: SystemDatabase) {
         self.database = database
@@ -112,6 +117,17 @@ final class ROMScanner: ROMScanning {
 
         let fileManager = FileManager.default
         let knownExtensions = database.allRomExtensions
+        let dosRoots = findDOSRoots(in: directory)
+        let dosRootPaths = dosRoots.map { $0.standardizedFileURL.path }
+        let dosPlatform = database.allPlatforms.first { $0.id == "dos" }
+        var dosGames: [DiscoveredROM] = []
+        if let dosPlatform {
+            dosGames = dosRoots.flatMap { root in
+                dosPackageInspector.discoverPackages(in: root).map {
+                    makeDOSROM(from: $0, platform: dosPlatform)
+                }
+            }
+        }
 
         guard let enumerator = fileManager.enumerator(
             at: directory,
@@ -129,6 +145,10 @@ final class ROMScanner: ROMScanning {
         var ps3GameRoots: [URL] = []
         for case let url as URL in enumerator {
             let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey])
+            if isInsideDOSRoot(url, dosRootPaths: dosRootPaths) {
+                if values?.isDirectory == true { enumerator.skipDescendants() }
+                continue
+            }
             if values?.isDirectory == true {
                 if ps3GameLayout(at: url) != nil {
                     ps3GameRoots.append(url)
@@ -138,6 +158,11 @@ final class ROMScanner: ROMScanning {
             }
             guard values?.isRegularFile == true else { continue }
             let ext = normalizedExtension(of: url)
+            if let dosPlatform,
+               let package = dosPackageInspector.inspectLoosePackage(url) {
+                dosGames.append(makeDOSROM(from: package, platform: dosPlatform))
+                continue
+            }
             guard !ext.isEmpty, knownExtensions.contains(ext) else { continue }
             candidates.append(url)
         }
@@ -148,7 +173,7 @@ final class ROMScanner: ROMScanning {
 
         guard !candidates.isEmpty else {
             progress(1.0)
-            return ps3Games
+            return dosGames + ps3Games
         }
 
         progress(0.0)
@@ -164,7 +189,7 @@ final class ROMScanner: ROMScanning {
 
         guard !groups.isEmpty else {
             progress(1.0)
-            return ps3Games
+            return dosGames + ps3Games
         }
 
         var results: [DiscoveredROM] = []
@@ -176,7 +201,63 @@ final class ROMScanner: ROMScanning {
             progress(Double(index + 1) / Double(total))
         }
 
-        return results + ps3Games
+        return results + dosGames + ps3Games
+    }
+
+    // MARK: - DOS packages
+
+    /// Locate conventional DOS roots without allowing arbitrary host .exe files
+    /// to become games. Once a DOS root is found its descendants are owned by the
+    /// package inspector and are skipped by the generic ROM scanner.
+    private func findDOSRoots(in root: URL) -> [URL] {
+        if database.platform(forFolderName: root.lastPathComponent)?.id == "dos" {
+            return [root.standardizedFileURL]
+        }
+
+        guard let enumerator = FileManager.default.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+
+        var roots: [URL] = []
+        for case let url as URL in enumerator {
+            let values = try? url.resourceValues(forKeys: [.isDirectoryKey])
+            guard values?.isDirectory == true else { continue }
+            if database.platform(forFolderName: url.lastPathComponent)?.id == "dos" {
+                roots.append(url.standardizedFileURL)
+                enumerator.skipDescendants()
+            }
+        }
+        return roots
+    }
+
+    private func isInsideDOSRoot(_ url: URL, dosRootPaths: [String]) -> Bool {
+        let path = url.standardizedFileURL.path
+        return dosRootPaths.contains { path == $0 || path.hasPrefix($0 + "/") }
+    }
+
+    private func makeDOSROM(from discovery: DOSPackageDiscovery, platform: Platform) -> DiscoveredROM {
+        DiscoveredROM(
+            url: discovery.sourceURL,
+            fileSize: discovery.fileSize,
+            romExtension: normalizedExtension(of: discovery.sourceURL),
+            platform: platform,
+            candidateEmulators: candidateEmulators(for: platform),
+            platformAmbiguous: false,
+            detection: PlatformDetectionInfo(
+                fileExtension: normalizedExtension(of: discovery.sourceURL),
+                candidates: [platform],
+                evidence: ["DOS package detected: \(discovery.package.kind.displayName)."],
+                resolvedBy: "DOS package",
+                sourceDirectory: discovery.package.kind == .folder
+                    ? discovery.sourceURL.standardizedFileURL
+                    : discovery.sourceURL.deletingLastPathComponent().standardizedFileURL
+            ),
+            memberFiles: discovery.memberFiles,
+            titleHint: discovery.title,
+            dosPackage: discovery.package
+        )
     }
 
     // MARK: - Entry-point resolution

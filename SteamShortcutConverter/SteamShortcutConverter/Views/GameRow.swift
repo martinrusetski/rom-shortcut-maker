@@ -132,9 +132,11 @@ private struct GameStatusIcon: View {
         case .upToDate: return "checkmark.circle"
         case .excluded: return "minus.circle"
         case .needsAttention:
-            return game.status == .unknownPlatform
-                ? "questionmark.circle.fill"
-                : "exclamationmark.triangle.fill"
+            switch game.status {
+            case .unknownPlatform: return "questionmark.circle.fill"
+            case .needsLaunchTarget: return "cursorarrow.click.2"
+            case .invalidSource, .noEmulator, .ready: return "exclamationmark.triangle.fill"
+            }
         }
     }
 
@@ -157,6 +159,8 @@ private struct GameStatusIcon: View {
             switch game.status {
             case .unknownPlatform: return "Needs attention - choose a platform"
             case .noEmulator: return "Needs attention - choose an emulator"
+            case .needsLaunchTarget: return "Needs attention - choose what to launch"
+            case .invalidSource: return "Needs attention - the game package is invalid"
             case .ready: return "Needs attention"
             }
         }

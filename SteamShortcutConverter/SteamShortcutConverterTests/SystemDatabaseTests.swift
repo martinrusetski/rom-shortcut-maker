@@ -220,6 +220,37 @@ final class SystemDatabaseTests: XCTestCase {
         )
     }
 
+    func testDOSFormatsAreExplicitPerBackend() throws {
+        let dos = try XCTUnwrap(database.allPlatforms.first { $0.id == "dos" })
+        let dosbox = try XCTUnwrap(
+            database.emulatorOptions(for: dos).first { $0.choice == .standalone(.dosbox) }
+        )
+
+        XCTAssertTrue(dosbox.supports(extension: ".exe"))
+        XCTAssertTrue(dosbox.supports(extension: ".com"))
+        XCTAssertTrue(dosbox.supports(extension: ".bat"))
+        XCTAssertTrue(dosbox.supports(extension: ".conf"))
+        XCTAssertFalse(dosbox.supports(extension: ".dosz"))
+    }
+
+    func testDOSBoxConfigurationUsesConfLaunchMode() {
+        XCTAssertEqual(
+            database.launchArguments(
+                for: .standalone(.dosbox),
+                platform: Platform(id: "dos", displayName: "DOS"),
+                romExtension: ".conf"
+            ),
+            ["-conf", "{romPath}"]
+        )
+    }
+
+    func testDOSOnlyGlobalExtensionDoesNotClaimHostExecutables() {
+        XCTAssertEqual(database.platforms(forExtension: ".dosz").map(\.id), ["dos"])
+        XCTAssertTrue(database.platforms(forExtension: ".exe").isEmpty)
+        XCTAssertTrue(database.platforms(forExtension: ".bat").isEmpty)
+        XCTAssertTrue(database.platforms(forExtension: ".conf").isEmpty)
+    }
+
     // MARK: - Extension set
 
     func testAllRomExtensionsNormalized() {

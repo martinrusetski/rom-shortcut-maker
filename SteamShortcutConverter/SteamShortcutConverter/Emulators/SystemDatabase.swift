@@ -32,6 +32,7 @@ struct EmulatorOption: Equatable, Hashable {
     let choice: EmulatorChoice      // .standalone(type) or .retroArchCore(core)
     let displayName: String         // "Snes9x" or "bsnes (RetroArch)"
     let launchArguments: [String]   // Structured argument templates; executable is separate.
+    let launchArgumentsByExtension: [String: [String]]
     let supportedExtensions: Set<String>?
     let supportsZIP: Bool
 
@@ -39,12 +40,14 @@ struct EmulatorOption: Equatable, Hashable {
         choice: EmulatorChoice,
         displayName: String,
         launchArguments: [String],
+        launchArgumentsByExtension: [String: [String]] = [:],
         supportedExtensions: Set<String>? = nil,
         supportsZIP: Bool = false
     ) {
         self.choice = choice
         self.displayName = displayName
         self.launchArguments = launchArguments
+        self.launchArgumentsByExtension = launchArgumentsByExtension
         self.supportedExtensions = supportedExtensions
         self.supportsZIP = supportsZIP
     }
@@ -53,9 +56,16 @@ struct EmulatorOption: Equatable, Hashable {
     /// option. Explicit rules are normalized with a leading dot.
     func supports(extension ext: String) -> Bool {
         let normalized = ext.lowercased().hasPrefix(".") ? ext.lowercased() : "." + ext.lowercased()
-        if normalized == ".zip" { return supportsZIP }
+        if normalized == ".zip" {
+            return supportedExtensions?.contains(normalized) ?? supportsZIP
+        }
         guard let supportedExtensions else { return true }
         return supportedExtensions.contains(normalized)
+    }
+
+    func arguments(forExtension ext: String) -> [String] {
+        let normalized = ext.lowercased().hasPrefix(".") ? ext.lowercased() : "." + ext.lowercased()
+        return launchArgumentsByExtension[normalized] ?? launchArguments
     }
 }
 
@@ -113,6 +123,7 @@ final class SystemDatabase {
         let core: String?
         let displayName: String?
         let launchArguments: [String]?
+        let launchArgumentsByExtension: [String: [String]]?
         let supportedExtensions: [String]?
         let supportsZip: Bool?
     }
@@ -177,6 +188,17 @@ final class SystemDatabase {
                         throw DatabaseError.malformedOption(
                             "launch arguments in \(platform.id): \(error.localizedDescription)"
                         )
+                    }
+                }
+                if let argumentsByExtension = option.launchArgumentsByExtension {
+                    for (ext, arguments) in argumentsByExtension {
+                        do {
+                            try LaunchArguments.validate(arguments)
+                        } catch {
+                            throw DatabaseError.malformedOption(
+                                "launch arguments for \(ext) in \(platform.id): \(error.localizedDescription)"
+                            )
+                        }
                     }
                 }
                 switch option.type {
@@ -280,6 +302,9 @@ final class SystemDatabase {
                     launchArguments: option.launchArguments
                         ?? emulatorDefaultArguments[type.rawValue]
                         ?? ["{romPath}"],
+                    launchArgumentsByExtension: normalizedArgumentsByExtension(
+                        option.launchArgumentsByExtension
+                    ),
                     supportedExtensions: normalizedSupportedExtensions(option.supportedExtensions),
                     supportsZIP: option.supportsZip ?? false
                 )
@@ -305,6 +330,15 @@ final class SystemDatabase {
         return Set(extensions.map(normalizeExtension))
     }
 
+    private func normalizedArgumentsByExtension(
+        _ arguments: [String: [String]]?
+    ) -> [String: [String]] {
+        guard let arguments else { return [:] }
+        return Dictionary(uniqueKeysWithValues: arguments.map { key, value in
+            (normalizeExtension(key), value)
+        })
+    }
+
     /// Resolve the curated launch profile for this exact platform/emulator pair.
     /// Platform options override the emulator-wide default where launch syntax
     /// depends on the emulated system (notably ares and MAME).
@@ -318,6 +352,18 @@ final class SystemDatabase {
         case .retroArchCore:
             return emulatorDefaultArguments["RetroArch"] ?? ["-L", "{corePath}", "{romPath}"]
         }
+    }
+
+
+    func launchArguments(
+        for choice: EmulatorChoice,
+        platform: Platform,
+        romExtension: String
+    ) -> [String] {
+        if let option = emulatorOptions(for: platform).first(where: { $0.choice == choice }) {
+            return option.arguments(forExtension: romExtension)
+        }
+        return launchArguments(for: choice, platform: platform)
     }
 
     /// The RetroArch libretro `systemid` tokens that map to a platform. Installed

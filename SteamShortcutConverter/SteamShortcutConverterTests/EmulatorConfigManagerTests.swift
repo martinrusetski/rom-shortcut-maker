@@ -17,6 +17,7 @@ final class EmulatorConfigManagerTests: XCTestCase {
     let snes = Platform(id: "snes", displayName: "SNES")
     let ps2 = Platform(id: "ps2", displayName: "PS2")
     let wiiu = Platform(id: "wiiu", displayName: "Wii U")
+    let dos = Platform(id: "dos", displayName: "DOS")
 
     override func setUpWithError() throws {
         database = try SystemDatabase()
@@ -46,6 +47,26 @@ final class EmulatorConfigManagerTests: XCTestCase {
     private func makeEmptyDetector() -> EmulatorDetector {
         EmulatorDetector(
             database: database, fs: FakeAppDiscovering(),
+            appSearchDirectories: [appsDir], binSearchDirectories: [binDir],
+            extraCoreDirectories: [], extraInfoDirectories: []
+        )
+    }
+
+    private func makeDOSDetector() -> EmulatorDetector {
+        let fs = FakeAppDiscovering()
+        let retroArch = appsDir.appendingPathComponent("RetroArch.app")
+        let dosbox = appsDir.appendingPathComponent("DOSBox.app")
+        fs.appsByDir[appsDir.path] = [retroArch, dosbox]
+        let coresDir = retroArch.appendingPathComponent("Contents/Resources/cores")
+        let infoDir = retroArch.appendingPathComponent("Contents/Resources/info")
+        fs.filesByDir[coresDir.path] = [coresDir.appendingPathComponent("dosbox_pure_libretro.dylib")]
+        fs.fileContents[infoDir.appendingPathComponent("dosbox_pure_libretro.info").path] = """
+        display_name = "DOS (DOSBox-Pure)"
+        systemid = "dos"
+        supported_extensions = "zip|dosz|iso|cue|exe|com|bat"
+        """
+        return EmulatorDetector(
+            database: database, fs: fs,
             appSearchDirectories: [appsDir], binSearchDirectories: [binDir],
             extraCoreDirectories: [], extraInfoDirectories: []
         )
@@ -87,6 +108,19 @@ final class EmulatorConfigManagerTests: XCTestCase {
         XCTAssertFalse(manager.availableOptions(for: snes, romExtension: ".zip").contains {
             $0.choice == .standalone(.bsnes)
         })
+    }
+
+    func testDOSBackendAvailabilityDependsOnActualFormatSupport() {
+        let manager = EmulatorConfigManager(
+            database: database, detector: makeDOSDetector(),
+            store: InMemoryEmulatorConfigStore()
+        )
+
+        let archiveChoices = manager.availableOptions(for: dos, romExtension: ".dosz").map(\.choice)
+        XCTAssertEqual(archiveChoices, [.retroArchCore(core: "dosbox_pure_libretro.dylib")])
+
+        let configChoices = manager.availableOptions(for: dos, romExtension: ".conf").map(\.choice)
+        XCTAssertEqual(configChoices, [.standalone(.dosbox)])
     }
 
     func testNothingInstalledYieldsNoOptionsAndNilDefault() {
@@ -204,6 +238,15 @@ final class EmulatorConfigManagerTests: XCTestCase {
             store: InMemoryEmulatorConfigStore()
         )
         XCTAssertNil(manager.resolve(.standalone(.snes9x), for: snes))
+    }
+
+    func testResolveDOSBoxConfigurationUsesConfProfile() {
+        let manager = EmulatorConfigManager(
+            database: database, detector: makeDOSDetector(),
+            store: InMemoryEmulatorConfigStore()
+        )
+        let resolved = manager.resolve(.standalone(.dosbox), for: dos, romExtension: ".conf")
+        XCTAssertEqual(resolved?.launchArguments, ["-conf", "{romPath}"])
     }
 
     // MARK: - Persistence

@@ -309,14 +309,14 @@ private struct InlineEmulatorPicker: View {
     var body: some View {
         if options.isEmpty {
             Button {
-                if game.platform.id == "unknown" {
+                if opensProperties {
                     viewModel.propertiesGameID = game.id
                 } else {
                     NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
                 }
             } label: {
                 Label(
-                    game.platform.id == "unknown" ? "Choose platform" : "Set up…",
+                    emptyActionLabel,
                     systemImage: "exclamationmark.triangle.fill"
                 )
                 .lineLimit(1)
@@ -324,9 +324,7 @@ private struct InlineEmulatorPicker: View {
             .buttonStyle(.borderless)
             .frame(maxWidth: .infinity, alignment: .leading)
             .foregroundColor(.orange)
-            .help(game.platform.id == "unknown"
-                  ? "Choose a platform before selecting an emulator"
-                  : "No compatible emulator is configured. Open Settings to set one up.")
+            .help(emptyActionHelp)
         } else {
             FixedWidthMenu(
                 title: selectedLabel,
@@ -346,6 +344,37 @@ private struct InlineEmulatorPicker: View {
                 }
             }
             .help("Change emulator for \(game.title)")
+        }
+    }
+
+    private var opensProperties: Bool {
+        switch game.status {
+        case .unknownPlatform, .needsLaunchTarget, .invalidSource:
+            true
+        case .ready, .noEmulator:
+            false
+        }
+    }
+
+    private var emptyActionLabel: String {
+        switch game.status {
+        case .unknownPlatform: "Choose platform"
+        case .needsLaunchTarget: "Choose startup"
+        case .invalidSource: "Inspect package"
+        case .ready, .noEmulator: "Set up…"
+        }
+    }
+
+    private var emptyActionHelp: String {
+        switch game.status {
+        case .unknownPlatform:
+            "Choose a platform before selecting an emulator"
+        case .needsLaunchTarget:
+            "Choose which DOS program or configuration starts this game"
+        case .invalidSource:
+            "Inspect the DOS package problem"
+        case .ready, .noEmulator:
+            "No compatible emulator is configured. Open Settings to set one up."
         }
     }
 

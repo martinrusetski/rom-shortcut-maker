@@ -231,10 +231,14 @@
       "id": "dos",
       "displayName": "DOS",
       "folderAliases": ["dos", "msdos", "ms-dos"],
-      "romExtensions": [".exe", ".bat", ".conf", ".dosz"],
+      "romExtensions": [".dosz"],
       "libretroSystems": ["dos"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "DOSBox" }
+        { "type": "standalone", "emulator": "DOSBox",
+          "supportedExtensions": [".exe", ".com", ".bat", ".conf"],
+          "launchArgumentsByExtension": {
+            ".conf": ["-conf", "{romPath}"]
+          } }
       ]
     },
     {

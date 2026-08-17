@@ -26,6 +26,7 @@ Either way, once installed the app updates itself in the background (via Sparkle
 ## Key Features
 
 - **Direct ROM scanning**: Point it at a ROM directory and it walks the tree, identifying games and platforms. Single-ROM ZIP archives are identified from their contents without extraction; ambiguous, unreadable, or multi-ROM archives stay unresolved. Arcade ROM-set ZIPs keep their folder-based behavior.
+- **DOS packages**: A `DOS`, `MS-DOS`, or `MSDOS` folder treats each immediate subfolder as one game, even when it contains many executables and data files. Startup programs, autoexec-enabled DOSBox configurations, archives, and disk images are inspected explicitly; ambiguous folders ask which file to start, setup utilities remain separate, and corrupt packages are blocked with a concrete explanation. Loose `.dosz` archives are also supported outside a DOS folder.
 - **Searchable game library**: Review every game in one compact table, change its platform or emulator inline, and use status icons and filters to find included, changed, or unresolved games.
 - **Emulator resolution**: Detects installed standalone emulators and RetroArch cores, and offers every runnable option per game. ZIP games are offered only to emulators with confirmed ZIP support. Set a default emulator per platform, or override per game.
 - **Game properties editor**: Edit the display name, platform, emulator, launch file, and advanced command template in a focused inspector. Changes are saved automatically, including title edits as you type.
@@ -49,6 +50,7 @@ Either way, once installed the app updates itself in the background (via Sparkle
 2. To load an existing Steam ROM library, use **Settings > General > Steam Import** and choose its `shortcuts.vdf` file.
 3. Review the library table. Use search and the **Included**, **Changed**, and **Needs Attention** filters to focus the list. Clear a row's checkbox to exclude it from generation.
 4. Change a game's platform or emulator directly in the table. Double-click it or click **Edit…** for title, artwork, launch, and advanced properties. Changes update the generation plan immediately.
+   For a DOS folder with multiple possible startup files, open Game Properties and choose **Starts with**. The selection is saved for that package; setup and configuration utilities can be run separately from the same section.
 5. In Game Properties, click **Change Artwork…** to search SteamGridDB and choose a specific icon or grid. Add your SteamGridDB API key in **Rom Shortcut Maker > Settings** if needed.
 6. Choose the **Output** folder. The footer shows exactly how many apps are new, updated, current, or need attention.
 7. Click **Generate _N_ Changes**. When everything is current, the action changes to **Rebuild Selected** for an explicit forced rebuild.

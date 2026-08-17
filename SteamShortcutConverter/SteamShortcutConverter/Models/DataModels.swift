@@ -493,6 +493,64 @@ enum GameStatus: Equatable {
     case ready
     case noEmulator
     case unknownPlatform
+    case needsLaunchTarget
+    case invalidSource
+}
+
+// MARK: - DOS package
+
+/// DOS games are packages rather than conventional single-file ROMs. The
+/// package keeps a stable library identity while its launch target can be a
+/// program, batch file, configuration, or disk image inside that package.
+enum DOSPackageKind: String, Codable, Equatable {
+    case folder
+    case archive
+    case executable
+    case configuration
+    case diskImage
+
+    var displayName: String {
+        switch self {
+        case .folder: return "Game folder"
+        case .archive: return "DOS archive"
+        case .executable: return "DOS program"
+        case .configuration: return "DOSBox configuration"
+        case .diskImage: return "Disk image"
+        }
+    }
+}
+
+enum DOSLaunchCandidateKind: String, Codable, Equatable {
+    case program
+    case batch
+    case configuration
+    case media
+    case utility
+}
+
+struct DOSLaunchCandidate: Codable, Equatable, Hashable, Identifiable {
+    let url: URL
+    let kind: DOSLaunchCandidateKind
+
+    var id: String { url.standardizedFileURL.path }
+    var displayName: String { url.lastPathComponent }
+}
+
+struct DOSPackageInfo: Codable, Equatable {
+    let kind: DOSPackageKind
+    let launchCandidates: [DOSLaunchCandidate]
+    let utilityCandidates: [DOSLaunchCandidate]
+    let mediaFiles: [URL]
+    let memberCount: Int
+    let archiveExecutableCount: Int?
+    let configurationHasAutoexec: Bool?
+    let blockingIssue: String?
+    let warning: String?
+    var selectedLaunchURL: URL?
+
+    var requiresLaunchSelection: Bool {
+        kind == .folder && selectedLaunchURL == nil && blockingIssue == nil
+    }
 }
 
 // MARK: - ROM Pipeline: ROM Metadata
@@ -561,8 +619,14 @@ struct GameEntry: Identifiable, Codable, Equatable {
     /// `stableKey` — switching the image is the same game.
     var launchImage: URL?
 
+    /// Present only for DOS sources. Keeps the package identity separate from
+    /// the selected file that the emulator actually receives.
+    var dosPackage: DOSPackageInfo?
+
     /// The path actually launched: the chosen image, else the primary rom path.
-    var launchPath: URL { launchImage ?? romPath }
+    var launchPath: URL {
+        dosPackage?.selectedLaunchURL ?? launchImage ?? romPath
+    }
 
     /// At-a-glance readiness, derived purely from the entry (no I/O, no database
     /// lookup) so list rows can render it without observing the ViewModel. A
@@ -570,6 +634,8 @@ struct GameEntry: Identifiable, Codable, Equatable {
     /// it; an "unknown" platform means the scan couldn't classify the ROM.
     var status: GameStatus {
         if platform.id == "unknown" { return .unknownPlatform }
+        if dosPackage?.blockingIssue != nil { return .invalidSource }
+        if dosPackage?.requiresLaunchSelection == true { return .needsLaunchTarget }
         if emulator == nil { return .noEmulator }
         return .ready
     }
@@ -598,7 +664,8 @@ struct GameEntry: Identifiable, Codable, Equatable {
         additionalFiles: [URL] = [],
         alternateImages: [URL] = [],
         launchImage: URL? = nil,
-        discCount: Int? = nil
+        discCount: Int? = nil,
+        dosPackage: DOSPackageInfo? = nil
     ) {
         self.id = id
         self.title = title
@@ -615,5 +682,6 @@ struct GameEntry: Identifiable, Codable, Equatable {
         self.alternateImages = alternateImages
         self.launchImage = launchImage
         self.discCount = discCount
+        self.dosPackage = dosPackage
     }
 }

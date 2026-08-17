@@ -19,6 +19,7 @@ struct GameOverride: Codable, Equatable {
     var launchArguments: [String]?
     var platform: String?      // platform id
     var imagePath: String?     // chosen launch image among alternates
+    var dosLaunchTargetPath: String? // chosen program/config/media inside a DOS folder package
     /// Whether the user un-checked this game's include box. Persisted so the
     /// choice survives rescan/relaunch. A nil value means "included" (the
     /// default), keeping an otherwise-empty override equal to `GameOverride()`.

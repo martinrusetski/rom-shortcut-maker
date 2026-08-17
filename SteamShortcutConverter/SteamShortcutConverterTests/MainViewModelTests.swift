@@ -162,6 +162,37 @@ final class MainViewModelTests: XCTestCase {
         )
     }
 
+    private func dosFolderROM(_ path: String, selected: String? = nil, issue: String? = nil) -> DiscoveredROM {
+        let folder = URL(fileURLWithPath: path)
+        let one = folder.appendingPathComponent("ONE.EXE")
+        let two = folder.appendingPathComponent("TWO.EXE")
+        return DiscoveredROM(
+            url: folder,
+            fileSize: 20,
+            romExtension: "",
+            platform: Platform(id: "dos", displayName: "DOS"),
+            candidateEmulators: [.dosbox],
+            platformAmbiguous: false,
+            memberFiles: [one, two],
+            titleHint: folder.lastPathComponent,
+            dosPackage: DOSPackageInfo(
+                kind: .folder,
+                launchCandidates: [
+                    DOSLaunchCandidate(url: one, kind: .program),
+                    DOSLaunchCandidate(url: two, kind: .program)
+                ],
+                utilityCandidates: [],
+                mediaFiles: [],
+                memberCount: 2,
+                archiveExecutableCount: nil,
+                configurationHasAutoexec: nil,
+                blockingIssue: issue,
+                warning: nil,
+                selectedLaunchURL: selected.map { folder.appendingPathComponent($0) }
+            )
+        )
+    }
+
     private func makeViewModel(
         roms: [DiscoveredROM],
         store: RomConfigStore = InMemoryRomConfigStore(),
@@ -543,6 +574,37 @@ final class MainViewModelTests: XCTestCase {
             platform: Platform(id: "snes", displayName: "SNES"),
             emulator: nil)
         XCTAssertEqual(entry.status, .noEmulator)
+    }
+
+    func testDOSStatusDistinguishesStartupChoiceFromInvalidPackage() async {
+        let ambiguous = makeViewModel(roms: [dosFolderROM("/ROMs/DOS/Ambiguous")])
+        await ambiguous.scan()
+        XCTAssertEqual(ambiguous.games[0].status, .needsLaunchTarget)
+
+        let invalid = makeViewModel(roms: [
+            dosFolderROM("/ROMs/DOS/Broken", issue: "No DOS program was found.")
+        ])
+        await invalid.scan()
+        XCTAssertEqual(invalid.games[0].status, .invalidSource)
+    }
+
+    func testDOSStartupSelectionPersistsAcrossRescan() async {
+        let source = dosFolderROM("/ROMs/DOS/Ambiguous")
+        let scanner = FakeROMScanner([source])
+        let vm = makeViewModel(roms: [], scanner: scanner)
+        await vm.scan()
+
+        let target = source.dosPackage!.launchCandidates[1].url
+        vm.setDOSLaunchTarget(target, for: vm.games[0])
+        XCTAssertEqual(vm.games[0].launchPath, target)
+        XCTAssertEqual(
+            vm.currentConfiguration.gameOverrides[vm.games[0].stableKey]?.dosLaunchTargetPath,
+            target.path
+        )
+
+        await vm.scan()
+        XCTAssertEqual(vm.games[0].launchPath, target)
+        XCTAssertNotEqual(vm.games[0].status, .needsLaunchTarget)
     }
 
     func testConfigDecodesMissingNewFields() throws {
