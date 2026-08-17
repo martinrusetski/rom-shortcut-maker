@@ -260,6 +260,10 @@ class AppBundleGeneratorTests: XCTestCase {
         XCTAssertTrue(plistString.contains("Test Game"), "Should contain display name")
         XCTAssertTrue(plistString.contains("1.0"), "Should contain version")
         XCTAssertTrue(plistString.contains("launch.sh"), "Should contain executable name")
+        XCTAssertTrue(plistString.contains("CFBundleIconFile"), "Should reference the default icon")
+
+        let iconURL = bundleURL.appendingPathComponent("Contents/Resources/AppIcon.icns")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: iconURL.path))
     }
     
     func testInfoPlistWithIcon() async throws {

@@ -46,24 +46,24 @@ if [ ! -f "$APP/Contents/Resources/SteamShortcutConverter_SteamShortcutConverter
     exit 1
 fi
 
-# App icon: compile Assets.xcassets only if the AppIcon set actually has images.
 ASSETS="${PKG_DIR}/SteamShortcutConverter/Assets.xcassets"
-ICON_PLIST_ENTRIES=""
-if [ -d "$ASSETS" ] && [ -n "$(find "$ASSETS/AppIcon.appiconset" -name '*.png' 2>/dev/null | head -1)" ]; then
-    echo "Compiling asset catalog (Assets.xcassets -> Assets.car)..."
-    xcrun actool "$ASSETS" \
-        --compile "$APP/Contents/Resources" \
-        --platform macosx \
-        --minimum-deployment-target 13.0 \
-        --app-icon AppIcon \
-        --output-partial-info-plist /dev/null > /dev/null
-    ICON_PLIST_ENTRIES="    <key>CFBundleIconFile</key>
+APP_ICON="${PKG_DIR}/SteamShortcutConverter/AppIcon.icon"
+if [ ! -d "$APP_ICON" ]; then
+    echo "Error: Icon Composer document was not found at $APP_ICON" >&2
+    exit 1
+fi
+
+echo "Compiling asset catalog and app icon..."
+xcrun actool "$ASSETS" "$APP_ICON" \
+    --compile "$APP/Contents/Resources" \
+    --platform macosx \
+    --minimum-deployment-target 13.0 \
+    --app-icon AppIcon \
+    --output-partial-info-plist /dev/null > /dev/null
+ICON_PLIST_ENTRIES="    <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleIconName</key>
     <string>AppIcon</string>"
-else
-    echo "No app icon images found in Assets.xcassets/AppIcon.appiconset — shipping with the default icon."
-fi
 
 cat > "$APP/Contents/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>

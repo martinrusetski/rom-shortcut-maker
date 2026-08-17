@@ -53,7 +53,7 @@ Either way, once installed the app updates itself in the background (via Sparkle
    For a DOS folder with multiple possible startup files, open Game Properties and choose **Starts with**. The selection is saved for that package; setup and configuration utilities can be run separately from the same section.
 5. In Game Properties, click **Change Artwork…** to search SteamGridDB and choose a specific icon or grid. Add your SteamGridDB API key in **Rom Shortcut Maker > Settings** if needed.
 6. Choose the **Output** folder. The footer shows exactly how many apps are new, updated, current, or need attention.
-7. Click **Generate _N_ Changes**. When everything is current, the action changes to **Rebuild Selected** for an explicit forced rebuild.
+7. Click **Create Shortcuts**. When everything is current, the action changes to **Create Shortcuts Again** if you need to recreate the included shortcuts.
 8. Launch the generated apps from Finder, Spotlight, the Dock, or Launchpad.
 
 ## Emulator / System Database

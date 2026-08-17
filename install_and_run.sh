@@ -72,24 +72,24 @@ fi
 SPARKLE_PUB_KEY="$(tr -d '[:space:]' < "$SCRIPT_DIR/sparkle_public_key.txt" 2>/dev/null || true)"
 SPARKLE_FEED_URL="https://raw.githubusercontent.com/martinrusetski/rom-shortcut-maker/main/appcast.xml"
 ASSETS="$PKG_DIR/SteamShortcutConverter/Assets.xcassets"
-ICON_PLIST_ENTRIES=""
-ICON_PNG="$(find "$ASSETS/AppIcon.appiconset" -name '*.png' -print -quit 2>/dev/null || true)"
+APP_ICON="$PKG_DIR/SteamShortcutConverter/AppIcon.icon"
 
-if [ -n "$ICON_PNG" ]; then
-    echo "Compiling app icon..."
-    xcrun actool "$ASSETS" \
-        --compile "$APP/Contents/Resources" \
-        --platform macosx \
-        --minimum-deployment-target 13.0 \
-        --app-icon AppIcon \
-        --output-partial-info-plist /dev/null >/dev/null
-    ICON_PLIST_ENTRIES="    <key>CFBundleIconFile</key>
+if [ ! -d "$APP_ICON" ]; then
+    echo "Error: Icon Composer document was not found at $APP_ICON" >&2
+    exit 1
+fi
+
+echo "Compiling app icon..."
+xcrun actool "$ASSETS" "$APP_ICON" \
+    --compile "$APP/Contents/Resources" \
+    --platform macosx \
+    --minimum-deployment-target 13.0 \
+    --app-icon AppIcon \
+    --output-partial-info-plist /dev/null >/dev/null
+ICON_PLIST_ENTRIES="    <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleIconName</key>
     <string>AppIcon</string>"
-else
-    echo "No app icon images found; using the default icon."
-fi
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

@@ -132,8 +132,14 @@ final class GameBundleGeneratorTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: plistURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: scriptURL.path))
 
+        let iconURL = bundleURL.appendingPathComponent("Contents/Resources/AppIcon.icns")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: iconURL.path))
+        XCTAssertEqual(String(data: try Data(contentsOf: iconURL).prefix(4), encoding: .ascii), "icns")
+
         let plist = try String(contentsOf: plistURL, encoding: .utf8)
         XCTAssertTrue(plist.contains("com.romshortcutmaker.chrono-trigger"))
+        XCTAssertTrue(plist.contains("CFBundleIconFile"))
+        XCTAssertTrue(plist.contains("AppIcon"))
 
         let script = try String(contentsOf: scriptURL, encoding: .utf8)
         XCTAssertTrue(script.contains("'/Applications/Snes9x/bin/snes9x'"))

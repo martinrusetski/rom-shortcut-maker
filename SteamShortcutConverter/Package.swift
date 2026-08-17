@@ -40,9 +40,12 @@ let package = Package(
             path: "SteamShortcutConverter",
             exclude: [
                 // Xcode-only build inputs; the release build generates its own
-                // Info.plist and compiles Assets.xcassets with actool in CI.
+                // Info.plist and compiles the asset catalog and Icon Composer
+                // document with actool in CI.
                 "Info.plist",
-                "Assets.xcassets"
+                "Assets.xcassets",
+                "AppIcon.icon",
+                "DefaultShortcutIcon.icon"
             ],
             resources: [
                 .process("Resources")

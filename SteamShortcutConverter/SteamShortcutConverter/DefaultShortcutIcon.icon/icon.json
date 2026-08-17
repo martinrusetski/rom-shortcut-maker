@@ -1,0 +1,55 @@
+{
+  "fill" : {
+    "solid" : "display-p3:0.72268,0.80183,0.67405,1.00000"
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "blend-mode" : "normal",
+          "fill" : {
+            "solid" : "display-p3:0.85658,0.48251,1.00000,0.71354"
+          },
+          "glass" : true,
+          "image-name" : "Vector-1.svg",
+          "name" : "Vector-1",
+          "position" : {
+            "scale" : 8,
+            "translation-in-points" : [
+              67.73470065497449,
+              -96.7316946457529
+            ]
+          }
+        },
+        {
+          "fill" : {
+            "solid" : "display-p3:0.96483,1.00000,0.93958,1.00000"
+          },
+          "image-name" : "Vector 2.svg",
+          "name" : "Vector 2",
+          "position" : {
+            "scale" : 7.5,
+            "translation-in-points" : [
+              0.00019926966012917546,
+              82.76395294861936
+            ]
+          }
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.3
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}

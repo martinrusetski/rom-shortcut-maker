@@ -9,9 +9,15 @@ import Foundation
 
 /// Implementation of AppBundleGenerator protocol
 class DefaultAppBundleGenerator: AppBundleGenerator {
-    
+
     private let fileManager = FileManager.default
-    
+    private let defaultShortcutIconURL: URL?
+
+    init(defaultShortcutIconURL: URL? = nil) {
+        self.defaultShortcutIconURL = defaultShortcutIconURL
+            ?? Bundle.module.url(forResource: "DefaultShortcutIcon", withExtension: "icns")
+    }
+
     // MARK: - Public Methods
     
     /// Generate a macOS app bundle from configuration
@@ -39,15 +45,19 @@ class DefaultAppBundleGenerator: AppBundleGenerator {
         // Set executable permissions on launch script
         try await setExecutablePermissions(at: bundleURL)
         
-        // Convert and save icon if available
+        let iconDestination = bundleURL.appendingPathComponent("Contents/Resources/AppIcon.icns")
+        var installedCustomIcon = false
         if let iconData = config.iconData {
             do {
-                try await convertIcon(iconData, to: bundleURL.appendingPathComponent("Contents/Resources/AppIcon.icns"))
+                try await convertIcon(iconData, to: iconDestination)
+                installedCustomIcon = true
             } catch {
-                // Log warning but continue - use default icon
                 logger.logIconConversionFailure(config.bundleName, error: error)
-                // Icon conversion failure is non-fatal
             }
+        }
+
+        if !installedCustomIcon {
+            try installDefaultShortcutIcon(to: iconDestination)
         }
         
         logger.logBundleCreated(config.bundleName)
@@ -163,7 +173,7 @@ class DefaultAppBundleGenerator: AppBundleGenerator {
             bundleName: config.bundleName,
             displayName: config.displayName,
             version: config.version,
-            hasIcon: config.iconData != nil,
+            hasIcon: true,
             at: bundleURL
         )
     }
@@ -447,13 +457,12 @@ class DefaultAppBundleGenerator: AppBundleGenerator {
             outputDirectory: game.outputDirectory
         )
 
-        let hasIcon = game.iconICNS != nil || game.iconOriginalPNG != nil
         try await generateInfoPlist(
             bundleIdentifier: game.bundleIdentifier,
             bundleName: game.bundleName,
             displayName: game.displayName,
             version: game.version,
-            hasIcon: hasIcon,
+            hasIcon: true,
             at: bundleURL
         )
 
@@ -473,25 +482,48 @@ class DefaultAppBundleGenerator: AppBundleGenerator {
         try scriptContent.write(to: scriptURL, atomically: true, encoding: .utf8)
         try await setExecutablePermissions(at: bundleURL)
 
-        // Icon: copy a pre-converted .icns, else convert an original PNG.
+        // Prefer supplied artwork, then fall back to the bundled shortcut icon.
         let icnsDestination = bundleURL.appendingPathComponent("Contents/Resources/AppIcon.icns")
+        var installedCustomIcon = false
         if let icns = game.iconICNS {
             try? fileManager.removeItem(at: icnsDestination)
             do {
                 try fileManager.copyItem(at: icns, to: icnsDestination)
+                installedCustomIcon = true
             } catch {
                 logger.logIconConversionFailure(game.bundleName, error: error)
             }
         } else if let png = game.iconOriginalPNG {
             do {
                 try await convertToIcns(from: png, to: icnsDestination)
+                installedCustomIcon = true
             } catch {
                 logger.logIconConversionFailure(game.bundleName, error: error)
             }
         }
 
+        if !installedCustomIcon {
+            try installDefaultShortcutIcon(to: icnsDestination)
+        }
+
         logger.logBundleCreated(game.bundleName)
         return bundleURL
+    }
+
+    private func installDefaultShortcutIcon(to destination: URL) throws {
+        guard let source = defaultShortcutIconURL,
+              fileManager.fileExists(atPath: source.path) else {
+            throw AppBundleGeneratorError.iconNotFound("Bundled default shortcut icon is missing")
+        }
+
+        try? fileManager.removeItem(at: destination)
+        do {
+            try fileManager.copyItem(at: source, to: destination)
+        } catch {
+            throw AppBundleGeneratorError.iconConversionFailed(
+                "Failed to copy bundled default shortcut icon: \(error.localizedDescription)"
+            )
+        }
     }
 
     /// Resolve an emulator path to a launchable executable: for an `.app`, the

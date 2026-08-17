@@ -434,7 +434,7 @@ private struct GenerateDock: View {
                     Button {
                         Task { await viewModel.generate(forceRebuild: true) }
                     } label: {
-                        Label("Rebuild Selected", systemImage: "arrow.clockwise")
+                        Label("Create Shortcuts Again", systemImage: "arrow.clockwise")
                     }
                     .buttonStyle(.glass)
                     .controlSize(.large)
@@ -443,7 +443,7 @@ private struct GenerateDock: View {
                     Button {
                         Task { await viewModel.generate() }
                     } label: {
-                        Label(generateButtonTitle, systemImage: "wand.and.sparkles")
+                        Label("Create Shortcuts", systemImage: "wand.and.sparkles")
                     }
                     .buttonStyle(.glassProminent)
                     .tint(.accentColor)
@@ -464,21 +464,12 @@ private struct GenerateDock: View {
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
-    private var generateButtonTitle: String {
-        if generationPlan.pendingCount == 0 {
-            return generationPlan.needsAttention > 0 ? "Resolve Issues" : "Generate"
-        }
-        return generationPlan.pendingCount == 1
-            ? "Generate 1 Change"
-            : "Generate \(generationPlan.pendingCount) Changes"
-    }
-
     private var statusTitle: String {
         if viewModel.isProcessing {
             switch viewModel.operation {
             case .scanning: return "Scanning your library"
             case .importing: return "Importing from Steam"
-            case .generating: return "Creating your apps"
+            case .generating: return "Creating your shortcuts"
             case .idle: break
             }
         }
@@ -487,7 +478,7 @@ private struct GenerateDock: View {
             return generationPlan.pendingCount == 1 ? "1 change is ready" : "\(generationPlan.pendingCount) changes are ready"
         }
         if generationPlan.needsAttention > 0 { return "Some games need attention" }
-        return "Choose games to generate"
+        return "Choose games to create"
     }
 
     @ViewBuilder

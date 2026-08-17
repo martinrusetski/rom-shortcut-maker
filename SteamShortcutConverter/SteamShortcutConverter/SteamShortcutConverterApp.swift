@@ -51,7 +51,7 @@ struct AppCommands: Commands {
 
             Divider()
 
-            Button("Generate Bundles") { Task { await viewModel.generate() } }
+            Button("Create Shortcuts") { Task { await viewModel.generate() } }
                 .disabled(!viewModel.canGenerate || viewModel.isProcessing)
 
             Button("Game Properties") {
@@ -68,4 +68,3 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 }
-
