@@ -188,18 +188,20 @@ private struct GameListZone: View {
                     .disabledCustomizationBehavior([.reorder, .visibility])
 
                     TableColumn("Platform") { game in
-                        Picker("Platform", selection: Binding(
-                            get: { game.platform },
-                            set: { viewModel.setPlatform($0, for: game) }
-                        )) {
-                            ForEach(viewModel.allPlatformsIncludingUnknown) { platform in
-                                Text(platform.displayName).tag(platform)
-                            }
+                        GeometryReader { geometry in
+                            FullWidthPopupPicker(
+                                options: viewModel.allPlatformsIncludingUnknown,
+                                selection: Binding(
+                                    get: { game.platform },
+                                    set: { viewModel.setPlatform($0, for: game) }
+                                ),
+                                title: \.displayName,
+                                accessibilityLabel: "Platform for \(game.title): \(game.platform.displayName)"
+                            )
+                            .frame(width: geometry.size.width, height: 24)
+                            .help("Change platform for \(game.title)")
                         }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(maxWidth: .infinity)
-                        .help("Change platform for \(game.title)")
+                        .frame(height: 24)
                     }
                     .width(min: 130, ideal: 160, max: 260)
                     .customizationID("platform")
@@ -326,24 +328,25 @@ private struct InlineEmulatorPicker: View {
             .foregroundColor(.orange)
             .help(emptyActionHelp)
         } else {
-            FixedWidthMenu(
-                title: selectedLabel,
-                width: 146,
-                accessibilityLabel: "Emulator for \(game.title): \(selectedLabel)"
-            ) {
-                ForEach(options, id: \.choice) { option in
-                    Button {
-                        viewModel.setEmulatorChoice(option.choice, for: game)
-                    } label: {
-                        if game.emulator == option.choice {
-                            Label(label(for: option), systemImage: "checkmark")
-                        } else {
-                            Text(label(for: option))
+            GeometryReader { geometry in
+                FullWidthPopupPicker(
+                    options: options.map(\.choice),
+                    selection: Binding(
+                        get: { selectedChoice },
+                        set: { viewModel.setEmulatorChoice($0, for: game) }
+                    ),
+                    title: { choice in
+                        guard let option = options.first(where: { $0.choice == choice }) else {
+                            return "Choose…"
                         }
-                    }
-                }
+                        return option.displayName
+                    },
+                    accessibilityLabel: "Emulator for \(game.title): \(selectedLabel)"
+                )
+                .frame(width: geometry.size.width, height: 24)
+                .help("Change emulator for \(game.title)")
             }
-            .help("Change emulator for \(game.title)")
+            .frame(height: 24)
         }
     }
 
@@ -379,18 +382,20 @@ private struct InlineEmulatorPicker: View {
     }
 
     private var selectedLabel: String {
-        guard let choice = game.emulator,
-              let option = options.first(where: { $0.choice == choice }) else {
+        guard let option = options.first(where: { $0.choice == selectedChoice }) else {
             return "Choose…"
         }
-        return label(for: option)
+        return option.displayName
     }
 
-    private func label(for option: EmulatorOption) -> String {
-        viewModel.defaultChoiceSetting(for: game.platform) == option.choice
-            ? "\(option.displayName) - default"
-            : option.displayName
+    private var selectedChoice: EmulatorChoice {
+        guard let choice = game.emulator,
+              options.contains(where: { $0.choice == choice }) else {
+            return options[0].choice
+        }
+        return choice
     }
+
 }
 
 // MARK: - Generation dock (bottom)

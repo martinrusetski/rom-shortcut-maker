@@ -224,26 +224,19 @@ private struct EmulatorsPane: View {
                         Text("Not installed").foregroundColor(.secondary).font(.caption)
                     } else {
                         let selectedChoice = viewModel.defaultChoiceSetting(for: platform)
-                            ?? options.first?.choice
-                        let selectedTitle = options.first { $0.choice == selectedChoice }?.displayName
-                            ?? "Choose…"
-                        FixedWidthMenu(
-                            title: selectedTitle,
-                            width: 240,
-                            accessibilityLabel: "Default emulator for \(platform.displayName): \(selectedTitle)"
-                        ) {
-                            ForEach(options, id: \.choice) { option in
-                                Button {
-                                    viewModel.setDefaultChoice(option.choice, for: platform)
-                                } label: {
-                                    if option.choice == selectedChoice {
-                                        Label(option.displayName, systemImage: "checkmark")
-                                    } else {
-                                        Text(option.displayName)
-                                    }
-                                }
-                            }
-                        }
+                            ?? options[0].choice
+                        FullWidthPopupPicker(
+                            options: options.map(\.choice),
+                            selection: Binding(
+                                get: { selectedChoice },
+                                set: { viewModel.setDefaultChoice($0, for: platform) }
+                            ),
+                            title: { choice in
+                                options.first { $0.choice == choice }?.displayName ?? "Choose…"
+                            },
+                            accessibilityLabel: "Default emulator for \(platform.displayName)"
+                        )
+                        .frame(width: 240, height: 24)
                     }
                 }
             }
