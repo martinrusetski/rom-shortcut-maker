@@ -28,15 +28,15 @@ Rom Shortcut Maker does not include emulators, games, console firmware, or BIOS 
 ### Homebrew (recommended)
 
 ```sh
-brew tap mrtnby/tap https://github.com/martinrusetski/homebrew-tap
-brew trust mrtnby/tap
-brew install --cask mrtnby/tap/rom-shortcut-maker
+brew tap martinrusetski/tap
+brew trust martinrusetski/tap
+brew install --cask martinrusetski/tap/rom-shortcut-maker
 ```
 
 The `brew trust` step allows Homebrew to load the cask from this non-official tap. Homebrew installs the app in `/Applications` and clears its quarantine attribute automatically. Update it later with:
 
 ```sh
-brew upgrade --cask mrtnby/tap/rom-shortcut-maker
+brew upgrade --cask martinrusetski/tap/rom-shortcut-maker
 ```
 
 ### DMG
