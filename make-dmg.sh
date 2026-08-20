@@ -41,7 +41,9 @@ for RESOURCE_BUNDLE in "$BIN_DIR"/*.bundle; do
     ditto "$RESOURCE_BUNDLE" "$APP/Contents/Resources/$(basename "$RESOURCE_BUNDLE")"
 done
 
-if [ ! -f "$APP/Contents/Resources/RomShortcutMaker_RomShortcutMaker.bundle/Contents/Resources/emulators.json" ]; then
+PACKAGED_RESOURCE_BUNDLE="$APP/Contents/Resources/RomShortcutMaker_RomShortcutMaker.bundle"
+PACKAGED_EMULATORS="$(find "$PACKAGED_RESOURCE_BUNDLE" -type f -name emulators.json -print -quit)"
+if [ -z "$PACKAGED_EMULATORS" ]; then
     echo "Error: Packaged app is missing emulators.json" >&2
     exit 1
 fi

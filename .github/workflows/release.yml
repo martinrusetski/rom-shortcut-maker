@@ -58,7 +58,12 @@ jobs:
               ditto "$RESOURCE_BUNDLE" "$APP_BUNDLE/Contents/Resources/$(basename "$RESOURCE_BUNDLE")"
           done
 
-          if [ ! -f "$APP_BUNDLE/Contents/Resources/RomShortcutMaker_RomShortcutMaker.bundle/Contents/Resources/emulators.json" ]; then
+          # SwiftPM may emit either a macOS-style or flat resource bundle,
+          # depending on the runner toolchain. Preserve the emitted layout and
+          # require the resource to exist somewhere inside the named bundle.
+          PACKAGED_RESOURCE_BUNDLE="$APP_BUNDLE/Contents/Resources/RomShortcutMaker_RomShortcutMaker.bundle"
+          PACKAGED_EMULATORS="$(find "$PACKAGED_RESOURCE_BUNDLE" -type f -name emulators.json -print -quit)"
+          if [ -z "$PACKAGED_EMULATORS" ]; then
               echo "::error::Packaged app is missing emulators.json"
               exit 1
           fi
