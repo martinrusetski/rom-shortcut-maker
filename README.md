@@ -28,7 +28,7 @@ Rom Shortcut Maker does not include emulators, games, console firmware, or BIOS 
 ### Homebrew (recommended)
 
 ```sh
-brew tap mrtnby/tap https://github.com/martinrusetski/true-tone-manager
+brew tap mrtnby/tap https://github.com/martinrusetski/homebrew-tap
 brew trust mrtnby/tap
 brew install --cask mrtnby/tap/rom-shortcut-maker
 ```
