@@ -4,7 +4,7 @@ cask "rom-shortcut-maker" do
 
   url "https://github.com/martinrusetski/rom-shortcut-maker/releases/download/v#{version}/RomShortcutMaker-v#{version}.dmg"
   name "Rom Shortcut Maker"
-  desc "Generate native macOS launchers for your ROMs from installed emulators"
+  desc "Generate native launchers for your ROMs from installed emulators"
   homepage "https://github.com/martinrusetski/rom-shortcut-maker"
 
   depends_on macos: :tahoe
