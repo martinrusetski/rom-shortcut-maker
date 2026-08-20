@@ -110,6 +110,9 @@ codesign --sign - --force --options runtime \
     "$APP"
 codesign --verify --verbose "$APP"
 
+echo "Validating packaged resources..."
+"$APP/Contents/MacOS/$BINARY_NAME" --validate-resources
+
 echo "Assembling DMG staging..."
 rm -rf "${SCRIPT_DIR}/${STAGING}"
 mkdir -p "${SCRIPT_DIR}/${STAGING}"

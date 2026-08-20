@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Darwin
 
 @main
 struct RomShortcutMakerApp: App {
@@ -13,10 +14,33 @@ struct RomShortcutMakerApp: App {
 
     // Owned here (not in ContentView) so the main window, the Settings scene, and
     // the Game Properties window all share one instance.
-    @StateObject private var viewModel = MainViewModel()
+    @StateObject private var viewModel: MainViewModel
 
     // Sparkle auto-updater, owned for the app's lifetime.
-    @StateObject private var updaterViewModel = UpdaterViewModel()
+    @StateObject private var updaterViewModel: UpdaterViewModel
+
+    init() {
+        if CommandLine.arguments.contains("--validate-resources") {
+            do {
+                _ = try SystemDatabase()
+                guard AppResources.url(
+                    forResource: "DefaultShortcutIcon",
+                    withExtension: "icns"
+                ) != nil else {
+                    throw AppResourceValidationError.defaultShortcutIconMissing
+                }
+                print("Packaged resources validated.")
+                Darwin.exit(EXIT_SUCCESS)
+            } catch {
+                let message = "Packaged resource validation failed: \(error.localizedDescription)\n"
+                FileHandle.standardError.write(Data(message.utf8))
+                Darwin.exit(EXIT_FAILURE)
+            }
+        }
+
+        _viewModel = StateObject(wrappedValue: MainViewModel())
+        _updaterViewModel = StateObject(wrappedValue: UpdaterViewModel())
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -34,6 +58,14 @@ struct RomShortcutMakerApp: App {
             SettingsView(viewModel: viewModel)
                 .frame(width: 560, height: 560)
         }
+    }
+}
+
+private enum AppResourceValidationError: LocalizedError {
+    case defaultShortcutIconMissing
+
+    var errorDescription: String? {
+        "DefaultShortcutIcon.icns resource not found in packaged app."
     }
 }
 

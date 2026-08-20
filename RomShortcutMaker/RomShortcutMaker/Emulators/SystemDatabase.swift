@@ -9,22 +9,6 @@
 
 import Foundation
 
-// MARK: - Bundle resolver
-
-extension Bundle {
-    /// Resolves the bundle that carries the app's resources. Under `swift test`
-    /// (SPM) that is the generated `Bundle.module`; in the shipped app it is
-    /// `Bundle.main`. `Bundle.module` only exists in the SPM build, so the
-    /// selection must be a compile-time `#if`, not a runtime fallback.
-    static var resolved: Bundle {
-        #if SWIFT_PACKAGE
-        return .module
-        #else
-        return .main
-        #endif
-    }
-}
-
 // MARK: - EmulatorOption
 
 /// A selectable way to run a platform, before checking what's installed.
@@ -149,8 +133,17 @@ final class SystemDatabase {
 
     // MARK: Init
 
-    /// Loads & validates the database from the bundled resource.
-    convenience init(bundle: Bundle = .resolved) throws {
+    /// Loads & validates the database from the app's packaged resource.
+    convenience init() throws {
+        guard let url = AppResources.url(forResource: "emulators", withExtension: "json") else {
+            throw DatabaseError.resourceNotFound
+        }
+        let data = try Data(contentsOf: url)
+        try self.init(data: data)
+    }
+
+    /// Loads & validates the database from an explicitly supplied bundle.
+    convenience init(bundle: Bundle) throws {
         guard let url = bundle.url(forResource: "emulators", withExtension: "json") else {
             throw DatabaseError.resourceNotFound
         }

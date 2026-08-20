@@ -15,7 +15,7 @@ class DefaultAppBundleGenerator: AppBundleGenerator {
 
     init(defaultShortcutIconURL: URL? = nil) {
         self.defaultShortcutIconURL = defaultShortcutIconURL
-            ?? Bundle.module.url(forResource: "DefaultShortcutIcon", withExtension: "icns")
+            ?? AppResources.url(forResource: "DefaultShortcutIcon", withExtension: "icns")
     }
 
     // MARK: - Public Methods

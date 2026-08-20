@@ -136,6 +136,9 @@ codesign --sign - --force --options runtime \
     "$APP"
 codesign --verify --verbose "$APP"
 
+echo "Validating packaged resources..."
+"$APP/Contents/MacOS/$BINARY_NAME" --validate-resources
+
 echo "Installing to $INSTALL_APP..."
 rm -rf "$INSTALL_APP"
 ditto "$APP" "$INSTALL_APP"

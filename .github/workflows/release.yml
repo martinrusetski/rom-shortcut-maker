@@ -134,6 +134,9 @@ jobs:
             "$APP_NAME.app"
           codesign --verify --verbose "$APP_NAME.app"
 
+      - name: Validate packaged resources
+        run: '"$APP_NAME.app/Contents/MacOS/$BINARY_NAME" --validate-resources'
+
       - name: Create DMG
         run: |
           VOL_NAME="$APP_NAME"

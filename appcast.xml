@@ -6,13 +6,5 @@
     <description>Software updates for Rom Shortcut Maker</description>
     <language>en</language>
     <!-- BEGIN ITEMS -->
-    <item>
-      <title>0.1.0</title>
-      <pubDate>Thu, 20 Aug 2026 13:13:55 +0000</pubDate>
-      <sparkle:version>2</sparkle:version>
-      <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
-      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-      <enclosure url="https://github.com/martinrusetski/rom-shortcut-maker/releases/download/v0.1.0/RomShortcutMaker-v0.1.0.dmg" sparkle:edSignature="jKqhiPX910QBTfSV4HPRMSqPccKM7WFF4Di8uIriE+p5KzuseaRvrM+L/jJPeNW+8dW1fGvBPkPjeKxIfL40Dw==" length="3981047" type="application/octet-stream" />
-    </item>
   </channel>
 </rss>
