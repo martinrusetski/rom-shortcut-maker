@@ -312,19 +312,36 @@ private struct EmulatorSetupRow: View {
                     }
                     .controlSize(.small)
                 }
-            } else if case .standalone(let type) = option.choice {
-                Button("Locate App…") {
+            } else if let emulatorToLocate {
+                Button(locateButtonTitle) {
                     if let url = FilePicker.chooseFile(
-                        title: "Locate \(option.displayName)",
+                        title: locatePanelTitle,
                         extensions: ["app"]
                     ) {
-                        viewModel.locateEmulator(type, at: url)
+                        viewModel.locateEmulator(emulatorToLocate, at: url)
                     }
                 }
                 .controlSize(.small)
             }
         }
         .padding(.vertical, 2)
+    }
+
+    private var emulatorToLocate: EmulatorType? {
+        switch option.choice {
+        case .standalone(let type): type
+        case .retroArchCore: .retroArch
+        }
+    }
+
+    private var locateButtonTitle: String {
+        if case .retroArchCore = option.choice { return "Locate RetroArch…" }
+        return "Locate App…"
+    }
+
+    private var locatePanelTitle: String {
+        if case .retroArchCore = option.choice { return "Locate RetroArch" }
+        return "Locate \(option.displayName)"
     }
 }
 
