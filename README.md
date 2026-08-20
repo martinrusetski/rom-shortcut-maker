@@ -1,5 +1,7 @@
 # Rom Shortcut Maker
 
+![Rom Shortcut Maker with a populated ROM library](assets/rom-shortcut-maker-screenshot-1.png)
+
 Rom Shortcut Maker is a native macOS app that turns your ROM library into individual Mac apps. It scans your game folders, matches each game with an installed emulator, finds artwork through SteamGridDB, and creates launchers you can open from Finder, Spotlight, Launchpad, or the Dock - without adding the games to Steam.
 
 ## Features
