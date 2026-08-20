@@ -1,6 +1,6 @@
 cask "rom-shortcut-maker" do
-  version "0.0.0"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  version "0.1.0"
+  sha256 "1e8678a1c1cbc2dcd665fbf1dfc16d86c8b53b3c0783eeb4465baef951d11092"
 
   url "https://github.com/martinrusetski/rom-shortcut-maker/releases/download/v#{version}/RomShortcutMaker-v#{version}.dmg"
   name "Rom Shortcut Maker"
