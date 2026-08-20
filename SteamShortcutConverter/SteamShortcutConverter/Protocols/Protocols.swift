@@ -59,6 +59,9 @@ enum EmulatorType: String, CaseIterable {
     case pcsxr = "PCSX-R"
     case pcsxredux = "PCSX-Redux"
     case play = "Play!"
+    // The GUI launcher delegates to the emulator with `-d`, so it needs a
+    // distinct launch profile from the standalone shadPS4 executable.
+    case shadps4QtLauncher = "shadPS4 Qt Launcher"
     case shadps4 = "shadPS4"
     case aethersx2 = "AetherSX2"
     
@@ -67,8 +70,11 @@ enum EmulatorType: String, CaseIterable {
     case citra = "Citra"
     case cemu = "Cemu"
     case yuzu = "Yuzu"
-    case ryujinx = "Ryujinx"
+    // These bundle-name matches must precede Ryujinx because both forks can
+    // retain a `Ryujinx` inner executable.
+    case ryubing = "Ryubing"
     case astris = "Astris"
+    case ryujinx = "Ryujinx"
     case mgba = "mGBA"
     case desmume = "DeSmuME"
     case melonds = "melonDS"
@@ -110,6 +116,9 @@ enum EmulatorType: String, CaseIterable {
     case dreampotato = "DreamPotato"
     
     // Classic computers
+    // Specific DOSBox forks must precede the generic DOSBox match.
+    case dosboxStaging = "DOSBox Staging"
+    case dosboxX = "DOSBox-X"
     case dosbox = "DOSBox"
     case scummvm = "ScummVM"
     case basiliskii = "Basilisk II"
@@ -187,6 +196,8 @@ enum EmulatorType: String, CaseIterable {
             return ["pcsxredux", "pcsx-redux"]
         case .play:
             return ["play!"]
+        case .shadps4QtLauncher:
+            return ["shadps4qtlauncher", "shadps4 qt launcher"]
         case .shadps4:
             return ["shadps4"]
         case .aethersx2:
@@ -201,10 +212,12 @@ enum EmulatorType: String, CaseIterable {
             return ["cemu"]
         case .yuzu:
             return ["yuzu"]
-        case .ryujinx:
-            return ["ryujinx"]
+        case .ryubing:
+            return ["ryubing"]
         case .astris:
             return ["astris"]
+        case .ryujinx:
+            return ["ryujinx"]
         case .mgba:
             return ["mgba"]
         case .desmume:
@@ -270,7 +283,7 @@ enum EmulatorType: String, CaseIterable {
         case .xemu:
             return ["xemu"]
         case .xenia:
-            return ["xenia"]
+            return ["xenia-edge", "xenia_edge", "xenia"]
         case .xenios:
             return ["xenios"]
         case .vita3k:
@@ -279,6 +292,10 @@ enum EmulatorType: String, CaseIterable {
             return ["dreampotato"]
             
         // Classic computers
+        case .dosboxStaging:
+            return ["dosbox staging", "dosbox-staging"]
+        case .dosboxX:
+            return ["dosbox-x", "dosbox x"]
         case .dosbox:
             return ["dosbox"]
         case .scummvm:

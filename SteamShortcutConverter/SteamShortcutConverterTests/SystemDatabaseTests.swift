@@ -99,7 +99,7 @@ final class SystemDatabaseTests: XCTestCase {
 
     func testIsoExtensionSurfacesCollisions() {
         let ids = Set(database.platforms(forExtension: ".iso").map { $0.id })
-        XCTAssertEqual(ids, ["gamecube", "wii", "ps2", "psp", "ps3", "3do"])
+        XCTAssertEqual(ids, ["gamecube", "wii", "ps2", "psp", "ps3", "xbox", "xbox360", "3do"])
     }
 
     func testExtensionMatchIsCaseInsensitiveAndDotTolerant() {
@@ -162,6 +162,7 @@ final class SystemDatabaseTests: XCTestCase {
         XCTAssertEqual(database.libretroSystems(for: Platform(id: "snes", displayName: "SNES")), ["super_nes"])
         XCTAssertEqual(database.libretroSystems(for: Platform(id: "ps1", displayName: "PS1")), ["playstation"])
         XCTAssertTrue(database.libretroSystems(for: Platform(id: "switch", displayName: "Switch")).isEmpty)
+        XCTAssertEqual(database.libretroSystems(for: Platform(id: "3do", displayName: "3DO")), ["3do"])
     }
 
     func testWiiUHasNoRetroArchOption() {
@@ -173,6 +174,48 @@ final class SystemDatabaseTests: XCTestCase {
                 XCTFail("wiiu should have no RetroArch core option")
             }
         }
+    }
+
+    func testPopularModernPlatformProfiles() throws {
+        let xbox = try XCTUnwrap(database.allPlatforms.first { $0.id == "xbox" })
+        XCTAssertEqual(
+            database.launchArguments(for: .standalone(.xemu), platform: xbox),
+            ["-dvd_path", "{romPath}"]
+        )
+
+        let xbox360 = try XCTUnwrap(database.allPlatforms.first { $0.id == "xbox360" })
+        XCTAssertEqual(
+            database.emulatorOptions(for: xbox360).map(\.choice),
+            [.standalone(.xenios), .standalone(.xenia)]
+        )
+
+        let ps4 = try XCTUnwrap(database.allPlatforms.first { $0.id == "ps4" })
+        XCTAssertEqual(
+            database.launchArguments(for: .standalone(.shadps4QtLauncher), platform: ps4),
+            ["-d", "-g", "{romContents}"]
+        )
+        XCTAssertEqual(
+            database.launchArguments(for: .standalone(.shadps4), platform: ps4),
+            ["-g", "{romContents}"]
+        )
+
+        let switchPlatform = try XCTUnwrap(database.allPlatforms.first { $0.id == "switch" })
+        let switchChoices = database.emulatorOptions(for: switchPlatform).map(\.choice)
+        XCTAssertEqual(switchChoices, [.standalone(.ryubing), .standalone(.astris)])
+
+        let c64 = try XCTUnwrap(database.allPlatforms.first { $0.id == "c64" })
+        XCTAssertEqual(
+            database.launchArguments(for: .standalone(.vice), platform: c64),
+            ["-autostart", "{romPath}"]
+        )
+    }
+
+    func testVitaReferenceProfile() throws {
+        let vita = try XCTUnwrap(database.allPlatforms.first { $0.id == "psvita" })
+        XCTAssertEqual(
+            database.launchArguments(for: .standalone(.vita3k), platform: vita),
+            ["-r", "{romContents}"]
+        )
     }
 
     // MARK: - Launch profiles
@@ -222,26 +265,66 @@ final class SystemDatabaseTests: XCTestCase {
 
     func testDOSFormatsAreExplicitPerBackend() throws {
         let dos = try XCTUnwrap(database.allPlatforms.first { $0.id == "dos" })
-        let dosbox = try XCTUnwrap(
-            database.emulatorOptions(for: dos).first { $0.choice == .standalone(.dosbox) }
-        )
+        let choices: [EmulatorType] = [.dosboxStaging, .dosboxX, .dosbox]
 
-        XCTAssertTrue(dosbox.supports(extension: ".exe"))
-        XCTAssertTrue(dosbox.supports(extension: ".com"))
-        XCTAssertTrue(dosbox.supports(extension: ".bat"))
-        XCTAssertTrue(dosbox.supports(extension: ".conf"))
-        XCTAssertFalse(dosbox.supports(extension: ".dosz"))
+        for choice in choices {
+            let option = try XCTUnwrap(
+                database.emulatorOptions(for: dos).first { $0.choice == .standalone(choice) }
+            )
+            XCTAssertTrue(option.supports(extension: ".exe"))
+            XCTAssertTrue(option.supports(extension: ".com"))
+            XCTAssertTrue(option.supports(extension: ".bat"))
+            XCTAssertTrue(option.supports(extension: ".conf"))
+            XCTAssertFalse(option.supports(extension: ".dosz"))
+        }
     }
 
     func testDOSBoxConfigurationUsesConfLaunchMode() {
-        XCTAssertEqual(
-            database.launchArguments(
-                for: .standalone(.dosbox),
-                platform: Platform(id: "dos", displayName: "DOS"),
-                romExtension: ".conf"
-            ),
-            ["-conf", "{romPath}"]
+        for choice in [EmulatorType.dosboxStaging, .dosboxX, .dosbox] {
+            XCTAssertEqual(
+                database.launchArguments(
+                    for: .standalone(choice),
+                    platform: Platform(id: "dos", displayName: "DOS"),
+                    romExtension: ".conf"
+                ),
+                ["-conf", "{romPath}"]
+            )
+        }
+    }
+
+    func testAdditionalMaintainedMacProfiles() throws {
+        let gb = try XCTUnwrap(database.allPlatforms.first { $0.id == "gb" })
+        XCTAssertEqual(database.emulatorOptions(for: gb).first?.choice, .standalone(.skyemu))
+        XCTAssertTrue(database.emulatorOptions(for: gb).first?.supports(extension: ".zip") == true)
+
+        let ds = try XCTUnwrap(database.allPlatforms.first { $0.id == "nds" })
+        XCTAssertTrue(database.supportsSingleFileZIP(for: ds))
+        XCTAssertTrue(
+            database.emulatorOptions(for: ds)
+                .first { $0.choice == .standalone(.skyemu) }?
+                .supports(extension: ".zip") == true
         )
+
+        let saturn = try XCTUnwrap(database.allPlatforms.first { $0.id == "saturn" })
+        XCTAssertEqual(database.emulatorOptions(for: saturn).first?.choice, .standalone(.ymir))
+
+        let atariST = try XCTUnwrap(database.allPlatforms.first { $0.id == "atarist" })
+        XCTAssertEqual(database.platform(forFolderName: "Atari ST"), atariST)
+        XCTAssertEqual(
+            database.launchArguments(for: .standalone(.hatari), platform: atariST),
+            ["{romPath}"]
+        )
+
+        let scummVM = try XCTUnwrap(database.allPlatforms.first { $0.id == "scummvm" })
+        XCTAssertEqual(
+            database.launchArguments(for: .standalone(.scummvm), platform: scummVM),
+            ["-f", "-p", "{romDirectory}", "{romContents}"]
+        )
+
+        let threeDO = try XCTUnwrap(database.allPlatforms.first { $0.id == "3do" })
+        for ext in [".cue", ".chd", ".iso", ".bin"] {
+            XCTAssertTrue(database.platforms(forExtension: ext).contains(threeDO))
+        }
     }
 
     func testDOSOnlyGlobalExtensionDoesNotClaimHostExecutables() {

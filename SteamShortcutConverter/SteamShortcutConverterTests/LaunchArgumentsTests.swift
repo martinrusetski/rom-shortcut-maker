@@ -60,4 +60,29 @@ final class LaunchArgumentsTests: XCTestCase {
             XCTAssertEqual(error as? LaunchArgumentError, .missingCore)
         }
     }
+
+    func testResolveReadsTrimmedROMReferenceContents() throws {
+        let reference = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LaunchArguments-\(UUID().uuidString).ps4")
+        try "  CUSA07010\n".write(to: reference, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: reference) }
+
+        XCTAssertEqual(
+            try LaunchArguments.resolve(["-g", "{romContents}"], rom: reference, core: nil),
+            ["-g", "CUSA07010"]
+        )
+    }
+
+    func testResolveRejectsEmptyROMReferenceContents() throws {
+        let reference = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LaunchArguments-\(UUID().uuidString).psvita")
+        try " \n".write(to: reference, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: reference) }
+
+        XCTAssertThrowsError(
+            try LaunchArguments.resolve(["-r", "{romContents}"], rom: reference, core: nil)
+        ) { error in
+            XCTAssertEqual(error as? LaunchArgumentError, .invalidROMReference)
+        }
+    }
 }

@@ -93,6 +93,62 @@ final class EmulatorDetectorTests: XCTestCase {
         XCTAssertNil(detected[.pcsx2])
     }
 
+    func testDetectRyubingBeforeRyujinxInnerExecutable() {
+        let fs = FakeAppDiscovering()
+        let app = appsDir.appendingPathComponent("Ryubing.app")
+        fs.appsByDir[appsDir.path] = [app]
+        fs.bundleExecutables[app.path] = "Ryujinx"
+        let detected = makeDetector(fs: fs).detectAll()
+
+        XCTAssertEqual(detected[.ryubing], [app])
+        XCTAssertNil(detected[.ryujinx])
+    }
+
+    func testDetectAstrisBeforeRyujinxInnerExecutable() {
+        let fs = FakeAppDiscovering()
+        let app = appsDir.appendingPathComponent("Astris.app")
+        fs.appsByDir[appsDir.path] = [app]
+        fs.bundleExecutables[app.path] = "Ryujinx"
+        let detected = makeDetector(fs: fs).detectAll()
+
+        XCTAssertEqual(detected[.astris], [app])
+        XCTAssertNil(detected[.ryujinx])
+    }
+
+    func testDetectShadPS4QtLauncherSeparatelyFromCLI() {
+        let fs = FakeAppDiscovering()
+        let app = appsDir.appendingPathComponent("shadPS4QtLauncher.app")
+        fs.appsByDir[appsDir.path] = [app]
+        fs.bundleExecutables[app.path] = "shadPS4QtLauncher"
+        let detected = makeDetector(fs: fs).detectAll()
+
+        XCTAssertEqual(detected[.shadps4QtLauncher], [app])
+        XCTAssertNil(detected[.shadps4])
+    }
+
+    func testDetectSpecificDOSBoxForksBeforeGenericDOSBox() {
+        let fs = FakeAppDiscovering()
+        let staging = appsDir.appendingPathComponent("DOSBox Staging.app")
+        let x = appsDir.appendingPathComponent("DOSBox-X.app")
+        fs.appsByDir[appsDir.path] = [staging, x]
+        let detected = makeDetector(fs: fs).detectAll()
+
+        XCTAssertEqual(detected[.dosboxStaging], [staging])
+        XCTAssertEqual(detected[.dosboxX], [x])
+        XCTAssertNil(detected[.dosbox])
+    }
+
+    func testDetectXbox360MacForks() {
+        let fs = FakeAppDiscovering()
+        let xenios = appsDir.appendingPathComponent("XeniOS.app")
+        let edge = appsDir.appendingPathComponent("Xenia-Edge.app")
+        fs.appsByDir[appsDir.path] = [xenios, edge]
+        let detected = makeDetector(fs: fs).detectAll()
+
+        XCTAssertEqual(detected[.xenios], [xenios])
+        XCTAssertEqual(detected[.xenia], [edge])
+    }
+
     func testAmbiguousAppNameDoesNotFalseMatch() {
         let fs = FakeAppDiscovering()
         let app = appsDir.appendingPathComponent("Software Updater.app")

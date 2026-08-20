@@ -72,6 +72,25 @@ final class EmulatorConfigManagerTests: XCTestCase {
         )
     }
 
+    private func makeThreeDODetector() -> EmulatorDetector {
+        let fs = FakeAppDiscovering()
+        let retroArch = appsDir.appendingPathComponent("RetroArch.app")
+        fs.appsByDir[appsDir.path] = [retroArch]
+        let coresDir = retroArch.appendingPathComponent("Contents/Resources/cores")
+        let infoDir = retroArch.appendingPathComponent("Contents/Resources/info")
+        fs.filesByDir[coresDir.path] = [coresDir.appendingPathComponent("opera_libretro.dylib")]
+        fs.fileContents[infoDir.appendingPathComponent("opera_libretro.info").path] = """
+        display_name = "The 3DO Company - 3DO (Opera)"
+        systemid = "3do"
+        supported_extensions = "iso|bin|chd|cue"
+        """
+        return EmulatorDetector(
+            database: database, fs: fs,
+            appSearchDirectories: [appsDir], binSearchDirectories: [binDir],
+            extraCoreDirectories: [], extraInfoDirectories: []
+        )
+    }
+
     // MARK: - Availability
 
     func testAvailableOptionsIncludesStandaloneAndInstalledCoreExcludesAbsent() {
@@ -121,6 +140,21 @@ final class EmulatorConfigManagerTests: XCTestCase {
 
         let configChoices = manager.availableOptions(for: dos, romExtension: ".conf").map(\.choice)
         XCTAssertEqual(configChoices, [.standalone(.dosbox)])
+    }
+
+    func testInstalledOperaCoreProvidesFormatAwareThreeDOSupport() {
+        let threeDO = Platform(id: "3do", displayName: "3DO")
+        let manager = EmulatorConfigManager(
+            database: database, detector: makeThreeDODetector(),
+            store: InMemoryEmulatorConfigStore()
+        )
+        let opera = EmulatorChoice.retroArchCore(core: "opera_libretro.dylib")
+
+        XCTAssertEqual(manager.availableOptions(for: threeDO).map(\.choice), [opera])
+        for ext in [".iso", ".bin", ".chd", ".cue"] {
+            XCTAssertEqual(manager.availableOptions(for: threeDO, romExtension: ext).map(\.choice), [opera])
+        }
+        XCTAssertTrue(manager.availableOptions(for: threeDO, romExtension: ".mds").isEmpty)
     }
 
     func testNothingInstalledYieldsNoOptionsAndNilDefault() {

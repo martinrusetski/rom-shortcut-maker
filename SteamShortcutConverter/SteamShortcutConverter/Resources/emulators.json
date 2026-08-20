@@ -34,6 +34,7 @@
       "supportsSingleFileZip": true,
       "libretroSystems": ["game_boy"],
       "emulatorOptions": [
+        { "type": "standalone", "emulator": "SkyEmu", "supportsZip": true },
         { "type": "standalone", "emulator": "SameBoy" }
       ]
     },
@@ -45,6 +46,7 @@
       "supportsSingleFileZip": true,
       "libretroSystems": ["game_boy_advance"],
       "emulatorOptions": [
+        { "type": "standalone", "emulator": "SkyEmu", "supportsZip": true },
         { "type": "standalone", "emulator": "mGBA", "supportsZip": true,
           "launchArguments": ["-f", "{romPath}"] },
         { "type": "standalone", "emulator": "NanoBoyAdvance" }
@@ -69,10 +71,12 @@
       "displayName": "DS",
       "folderAliases": ["nds", "ds", "nintendo ds", "nintendods"],
       "romExtensions": [".nds", ".dsi", ".ids"],
+      "supportsSingleFileZip": true,
       "libretroSystems": ["nds"],
       "emulatorOptions": [
         { "type": "standalone", "emulator": "melonDS" },
-        { "type": "standalone", "emulator": "DeSmuME" }
+        { "type": "standalone", "emulator": "DeSmuME" },
+        { "type": "standalone", "emulator": "SkyEmu", "supportsZip": true }
       ]
     },
     {
@@ -165,6 +169,30 @@
       ]
     },
     {
+      "id": "ps4",
+      "displayName": "PS4",
+      "folderAliases": ["ps4", "playstation 4", "sony playstation 4"],
+      "romExtensions": [".ps4"],
+      "libretroSystems": [],
+      "emulatorOptions": [
+        { "type": "standalone", "emulator": "shadPS4 Qt Launcher",
+          "launchArguments": ["-d", "-g", "{romContents}"] },
+        { "type": "standalone", "emulator": "shadPS4",
+          "launchArguments": ["-g", "{romContents}"] }
+      ]
+    },
+    {
+      "id": "psvita",
+      "displayName": "PS Vita",
+      "folderAliases": ["psvita", "ps vita", "playstation vita", "vita"],
+      "romExtensions": [".psvita"],
+      "libretroSystems": [],
+      "emulatorOptions": [
+        { "type": "standalone", "emulator": "Vita3K",
+          "launchArguments": ["-r", "{romContents}"] }
+      ]
+    },
+    {
       "id": "genesis",
       "displayName": "Genesis",
       "folderAliases": ["genesis", "megadrive", "mega drive", "md", "sega genesis", "sega megadrive", "sega mega drive"],
@@ -184,6 +212,8 @@
       "chdMediaTypes": ["cd"],
       "libretroSystems": ["sega_saturn"],
       "emulatorOptions": [
+        { "type": "standalone", "emulator": "Ymir",
+          "supportedExtensions": [".cue", ".chd", ".m3u", ".ccd", ".mds"] },
         { "type": "standalone", "emulator": "Mednafen",
           "supportedExtensions": [".cue", ".chd", ".m3u", ".ccd", ".mds"] }
       ]
@@ -234,11 +264,32 @@
       "romExtensions": [".dosz"],
       "libretroSystems": ["dos"],
       "emulatorOptions": [
+        { "type": "standalone", "emulator": "DOSBox Staging",
+          "supportedExtensions": [".exe", ".com", ".bat", ".conf"],
+          "launchArgumentsByExtension": {
+            ".conf": ["-conf", "{romPath}"]
+          } },
+        { "type": "standalone", "emulator": "DOSBox-X",
+          "supportedExtensions": [".exe", ".com", ".bat", ".conf"],
+          "launchArgumentsByExtension": {
+            ".conf": ["-conf", "{romPath}"]
+          } },
         { "type": "standalone", "emulator": "DOSBox",
           "supportedExtensions": [".exe", ".com", ".bat", ".conf"],
           "launchArgumentsByExtension": {
             ".conf": ["-conf", "{romPath}"]
           } }
+      ]
+    },
+    {
+      "id": "scummvm",
+      "displayName": "ScummVM",
+      "folderAliases": ["scummvm", "scumm vm", "adventure games", "point and click"],
+      "romExtensions": [".scummvm"],
+      "libretroSystems": [],
+      "emulatorOptions": [
+        { "type": "standalone", "emulator": "ScummVM",
+          "launchArguments": ["-f", "-p", "{romDirectory}", "{romContents}"] }
       ]
     },
     {
@@ -259,8 +310,34 @@
       "romExtensions": [".nsp", ".xci", ".nro", ".nca"],
       "libretroSystems": [],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "Ryujinx",
-          "launchArguments": ["--fullscreen", "{romPath}"] }
+        { "type": "standalone", "emulator": "Ryubing",
+          "launchArguments": ["{romPath}"] },
+        { "type": "standalone", "emulator": "Astris",
+          "launchArguments": ["{romPath}"] }
+      ]
+    },
+    {
+      "id": "xbox",
+      "displayName": "Xbox",
+      "folderAliases": ["xbox", "original xbox", "microsoft xbox"],
+      "romExtensions": [".iso"],
+      "libretroSystems": [],
+      "emulatorOptions": [
+        { "type": "standalone", "emulator": "xemu",
+          "launchArguments": ["-dvd_path", "{romPath}"] }
+      ]
+    },
+    {
+      "id": "xbox360",
+      "displayName": "Xbox 360",
+      "folderAliases": ["xbox360", "xbox 360", "x360", "microsoft xbox 360"],
+      "romExtensions": [".iso", ".xex", ".zar", ".con", ".live", ".pirs"],
+      "libretroSystems": [],
+      "emulatorOptions": [
+        { "type": "standalone", "emulator": "XeniOS",
+          "launchArguments": ["{romPath}"] },
+        { "type": "standalone", "emulator": "Xenia",
+          "launchArguments": ["{romPath}"] }
       ]
     },
     {
@@ -270,7 +347,8 @@
       "romExtensions": [".d64", ".t64", ".prg", ".crt", ".g64", ".tap", ".d81", ".p00"],
       "libretroSystems": ["commodore_c64"],
       "emulatorOptions": [
-        { "type": "standalone", "emulator": "VICE" }
+        { "type": "standalone", "emulator": "VICE",
+          "launchArguments": ["-autostart", "{romPath}"] }
       ]
     },
     {
@@ -326,6 +404,17 @@
       "libretroSystems": ["sharp_x68000"],
       "emulatorOptions": [
         { "type": "standalone", "emulator": "XM6" }
+      ]
+    },
+    {
+      "id": "atarist",
+      "displayName": "Atari ST",
+      "folderAliases": ["atarist", "atari st", "atari ste", "atari falcon", "atari tt"],
+      "romExtensions": [".st", ".msa", ".stx", ".dim", ".ipf", ".ctr"],
+      "libretroSystems": ["atari_st"],
+      "emulatorOptions": [
+        { "type": "standalone", "emulator": "Hatari",
+          "launchArguments": ["{romPath}"] }
       ]
     },
     {
@@ -455,7 +544,7 @@
       "id": "3do",
       "displayName": "3DO",
       "folderAliases": ["3do", "panasonic 3do", "real3do"],
-      "romExtensions": [".cue", ".chd", ".iso"],
+      "romExtensions": [".cue", ".chd", ".iso", ".bin"],
       "chdMediaTypes": ["cd"],
       "libretroSystems": ["3do"],
       "emulatorOptions": []
@@ -466,6 +555,7 @@
     { "id": "Snes9x",         "defaultLaunchArguments": ["{romPath}"] },
     { "id": "bsnes",          "defaultLaunchArguments": ["{romPath}"] },
     { "id": "SameBoy",        "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "SkyEmu",        "defaultLaunchArguments": ["{romPath}"] },
     { "id": "mGBA",           "defaultLaunchArguments": ["{romPath}"] },
     { "id": "NanoBoyAdvance", "defaultLaunchArguments": ["{romPath}"] },
     { "id": "ares",           "defaultLaunchArguments": ["{romPath}"] },
@@ -481,16 +571,28 @@
     { "id": "Play!",          "defaultLaunchArguments": ["{romPath}"] },
     { "id": "PPSSPP",         "defaultLaunchArguments": ["{romPath}"] },
     { "id": "RPCS3",          "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "shadPS4 Qt Launcher", "defaultLaunchArguments": ["-d", "-g", "{romContents}"] },
+    { "id": "shadPS4",        "defaultLaunchArguments": ["-g", "{romContents}"] },
+    { "id": "Vita3K",         "defaultLaunchArguments": ["-r", "{romContents}"] },
     { "id": "Mednafen",       "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "Ymir",           "defaultLaunchArguments": ["{romPath}"] },
     { "id": "Flycast",        "defaultLaunchArguments": ["{romPath}"] },
     { "id": "Redream",        "defaultLaunchArguments": ["{romPath}"] },
     { "id": "MAME",           "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "DOSBox Staging", "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "DOSBox-X",       "defaultLaunchArguments": ["{romPath}"] },
     { "id": "DOSBox",         "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "ScummVM",        "defaultLaunchArguments": ["{romPath}"] },
     { "id": "Cemu",           "defaultLaunchArguments": ["{romPath}"] },
-    { "id": "Ryujinx",        "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "Ryubing",        "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "Astris",         "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "xemu",           "defaultLaunchArguments": ["-dvd_path", "{romPath}"] },
+    { "id": "XeniOS",         "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "Xenia",          "defaultLaunchArguments": ["{romPath}"] },
     { "id": "VICE",           "defaultLaunchArguments": ["{romPath}"] },
     { "id": "FS-UAE",         "defaultLaunchArguments": ["{romPath}"] },
     { "id": "vAmiga",         "defaultLaunchArguments": ["{romPath}"] },
+    { "id": "Hatari",         "defaultLaunchArguments": ["{romPath}"] },
     { "id": "FUSE",           "defaultLaunchArguments": ["{romPath}"] },
     { "id": "Spectral",       "defaultLaunchArguments": ["{romPath}"] },
     { "id": "Neko Project II", "defaultLaunchArguments": ["{romPath}"] },

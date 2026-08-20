@@ -264,7 +264,7 @@ final class ROMScannerTests: XCTestCase {
         let roms = try await scan()
         let game = rom(roms, named: "Mystery.iso")
         XCTAssertNil(game?.platform)
-        XCTAssertEqual(game?.detection?.candidates.count, 6)
+        XCTAssertEqual(game?.detection?.candidates.count, 8)
         XCTAssertTrue(game?.detection?.summary.contains("Possible platforms") ?? false)
         XCTAssertTrue(game?.detection?.evidence.contains { $0.contains(".iso") } ?? false)
     }
@@ -296,6 +296,32 @@ final class ROMScannerTests: XCTestCase {
         let roms = try await scan()
         XCTAssertNil(rom(roms, named: "readme.txt"))
         XCTAssertNotNil(rom(roms, named: "Zelda.sfc"))
+    }
+
+    func testScummVMReferenceAndAtariSTFolderAreRecognized() async throws {
+        try makeFile("ScummVM/Monkey Island/Monkey Island.scummvm", contents: "scumm:monkey\n")
+        try makeFile("Atari ST/Another World.st")
+        let roms = try await scan()
+
+        XCTAssertEqual(rom(roms, named: "Monkey Island.scummvm")?.platform?.id, "scummvm")
+        XCTAssertEqual(rom(roms, named: "Another World.st")?.platform?.id, "atarist")
+    }
+
+    func testXbox360FolderResolvesISOAndXEX() async throws {
+        try makeFile("Xbox 360/Lost Odyssey.iso")
+        try makeFile("Xbox 360/Arcade Game.xex")
+        let roms = try await scan()
+
+        XCTAssertEqual(rom(roms, named: "Lost Odyssey.iso")?.platform?.id, "xbox360")
+        XCTAssertEqual(rom(roms, named: "Arcade Game.xex")?.platform?.id, "xbox360")
+    }
+
+    func testThreeDOFolderRecognizesOperaFormats() async throws {
+        try makeFile("3DO/Road Rash.bin")
+        let game = rom(try await scan(), named: "Road Rash.bin")
+
+        XCTAssertEqual(game?.platform?.id, "3do")
+        XCTAssertFalse(game?.platformAmbiguous ?? true)
     }
 
     func testHiddenFileIsSkipped() async throws {
@@ -778,5 +804,34 @@ final class ROMScannerTests: XCTestCase {
         try makeFile("Downloads/WindowsTool.exe")
         let roms = try await scan()
         XCTAssertTrue(roms.isEmpty)
+    }
+
+    // MARK: - Modern platform reference files
+
+    func testPS4ReferenceFileUsesFolderAndExtensionSignals() async throws {
+        try makeFile("PS4/Sonic Mania.ps4", contents: "CUSA07010\n")
+
+        let roms = try await scan()
+        let game = try XCTUnwrap(rom(roms, named: "Sonic Mania.ps4"))
+        XCTAssertEqual(game.platform?.id, "ps4")
+        XCTAssertEqual(game.candidateEmulators, [.shadps4QtLauncher, .shadps4])
+    }
+
+    func testVitaReferenceFileIsDetected() async throws {
+        try makeFile("PS Vita/Gravity Rush.psvita", contents: "PCSF00024\n")
+
+        let roms = try await scan()
+        let game = try XCTUnwrap(rom(roms, named: "Gravity Rush.psvita"))
+        XCTAssertEqual(game.platform?.id, "psvita")
+        XCTAssertEqual(game.candidateEmulators, [.vita3k])
+    }
+
+    func testXboxISOResolvesFromFolder() async throws {
+        try makeFile("Xbox/Jet Set Radio Future.iso")
+
+        let roms = try await scan()
+        let game = try XCTUnwrap(rom(roms, named: "Jet Set Radio Future.iso"))
+        XCTAssertEqual(game.platform?.id, "xbox")
+        XCTAssertEqual(game.candidateEmulators, [.xemu])
     }
 }

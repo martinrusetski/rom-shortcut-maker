@@ -60,6 +60,21 @@ Either way, once installed the app updates itself in the background (via Sparkle
 
 The curated knowledge base of platforms, folder aliases, ROM extensions, standalone emulators, and RetroArch cores lives in `SteamShortcutConverter/SteamShortcutConverter/Resources/emulators.json`. It is data, not code - add platforms/emulators/cores by editing the JSON (the test suite validates that every referenced emulator maps to a real `EmulatorType`).
 
+### Platform-specific library entries
+
+- **Xbox:** put XISO-compatible `.iso` images in an `Xbox` folder. They launch through xemu with `-dvd_path`.
+- **Xbox 360:** XeniOS and Xenia-Edge accept `.iso`, `.xex`, `.zar`, `.con`, `.live`, and `.pirs` entries from an `Xbox 360` folder. Both are early macOS emulators with game-dependent compatibility; XeniOS is preferred because it is Apple-focused.
+- **PS4:** install the game in shadPS4, then create a small `.ps4` text file in a `PS4` folder. Name it after the game and put only its CUSA serial inside, for example `Sonic Mania.ps4` containing `CUSA07010`. Both the shadPS4 Qt launcher and standalone CLI are supported.
+- **PS Vita:** install the game in Vita3K, then create a small `.psvita` text file containing its title ID, for example `PCSF00024`. The filename becomes the shortcut name.
+- **Switch:** Ryubing and Astris are the configured current launchers. Put `.nsp`, `.xci`, `.nro`, or `.nca` files in a `Switch` folder.
+- **Game Boy / GBA / DS:** SkyEmu is available alongside the existing specialist emulators. Nintendo DS support in SkyEmu is still beta quality, so melonDS remains the first DS choice.
+- **Saturn:** Ymir is the first standalone choice for `.cue`, `.chd`, `.m3u`, `.ccd`, and `.mds` disc entries. It requires macOS 15 or later and a Saturn BIOS.
+- **DOS:** DOSBox Staging and DOSBox-X are preferred ahead of legacy DOSBox. Game-specific `.conf` files launch through each emulator's explicit `-conf` mode.
+- **ScummVM:** create a small `.scummvm` text file inside each game's data folder containing its full ScummVM game ID, for example `scumm:monkey`. The file's name becomes the shortcut name.
+- **Atari ST:** put `.st`, `.msa`, `.stx`, `.dim`, `.ipf`, or `.ctr` images in an `Atari ST` folder. Hatari receives the image path directly.
+- **3DO:** the maintained option is RetroArch's Opera core. Installed cores are discovered dynamically through their metadata; Opera maps to 3DO automatically and supports `.iso`, `.bin`, `.chd`, and `.cue` images. A compatible 3DO BIOS must be placed in RetroArch's System directory.
+- **Commodore 64:** VICE remains configured because its explicit `-autostart` interface is reliable. VirtualC64 and Denise are recommended native apps, but they are not added until their direct-launch behavior can be confirmed.
+
 ## Troubleshooting
 
 - **App won't open** ("damaged"): `xattr -cr "/path/to/Rom Shortcut Maker.app"`

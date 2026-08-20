@@ -83,6 +83,22 @@ final class GameBundleGeneratorTests: XCTestCase {
         )
     }
 
+    func testPointerFileContentsBecomeOneSafelyQuotedArgument() throws {
+        let reference = tempDirectory.appendingPathComponent("Sonic Mania.ps4")
+        try "CUSA07010\n".write(to: reference, atomically: true, encoding: .utf8)
+
+        let command = try generator.buildLaunchCommand(
+            emulator: URL(fileURLWithPath: "/Applications/shadPS4QtLauncher.app"),
+            launchArguments: ["-d", "-g", "{romContents}"],
+            rom: reference,
+            core: nil
+        )
+        XCTAssertEqual(
+            command,
+            "'/usr/bin/open' '-a' '/Applications/shadPS4QtLauncher.app' '--args' '-d' '-g' 'CUSA07010'"
+        )
+    }
+
     // MARK: - Single-escaping correctness (exercised through a real shell)
 
     func testShellQuotingSurvivesNastyPaths() throws {

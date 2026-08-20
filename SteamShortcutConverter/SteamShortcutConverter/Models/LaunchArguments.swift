@@ -12,6 +12,7 @@ enum LaunchArgumentError: LocalizedError, Equatable {
     case unmatchedQuote
     case unknownPlaceholder(String)
     case missingCore
+    case invalidROMReference
 
     var errorDescription: String? {
         switch self {
@@ -21,6 +22,8 @@ enum LaunchArgumentError: LocalizedError, Equatable {
             return "Unknown launch placeholder: \(placeholder)."
         case .missingCore:
             return "The arguments require a RetroArch core, but no core is selected."
+        case .invalidROMReference:
+            return "The ROM reference file must contain a short, non-empty UTF-8 identifier."
         }
     }
 }
@@ -31,6 +34,7 @@ enum LaunchArguments {
         "{romDirectory}",
         "{romFilename}",
         "{romStem}",
+        "{romContents}",
         "{corePath}"
     ]
 
@@ -105,11 +109,14 @@ enum LaunchArguments {
         if arguments.contains(where: { $0.contains("{corePath}") }) && core == nil {
             throw LaunchArgumentError.missingCore
         }
+        let needsROMContents = arguments.contains { $0.contains("{romContents}") }
+        let romContents = needsROMContents ? try referenceContents(of: rom) : ""
         let values = [
             "{romPath}": rom.path,
             "{romDirectory}": rom.deletingLastPathComponent().path,
             "{romFilename}": rom.lastPathComponent,
             "{romStem}": rom.deletingPathExtension().lastPathComponent,
+            "{romContents}": romContents,
             "{corePath}": core?.path ?? ""
         ]
         return arguments.map { argument in
@@ -117,6 +124,22 @@ enum LaunchArguments {
                 value.replacingOccurrences(of: replacement.key, with: replacement.value)
             }
         }
+    }
+
+    /// Pointer files are deliberately tiny text files (for example a PS4 CUSA
+    /// serial). Refuse large/binary inputs so an accidental custom profile does
+    /// not read an entire disc image just to expand an argument.
+    private static func referenceContents(of url: URL) throws -> String {
+        guard let values = try? url.resourceValues(forKeys: [.fileSizeKey]),
+              let size = values.fileSize,
+              size > 0,
+              size <= 4_096,
+              let value = try? String(contentsOf: url, encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else {
+            throw LaunchArgumentError.invalidROMReference
+        }
+        return value
     }
 
     private static func placeholders(in value: String) -> [String] {
