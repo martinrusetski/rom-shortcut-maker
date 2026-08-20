@@ -14,7 +14,7 @@ SHORT_VERSION="$1"
 BUILD_VERSION="$2"
 DMG_PATH="$3"
 DOWNLOAD_URL="$4"
-MIN_SYSTEM_VERSION="13.0"
+MIN_SYSTEM_VERSION="26.0"
 
 if [ -z "$SHORT_VERSION" ] || [ -z "$BUILD_VERSION" ] || [ -z "$DMG_PATH" ] || [ -z "$DOWNLOAD_URL" ]; then
     echo "usage: update-appcast.sh <short-version> <build-version> <dmg-path> <download-url>" >&2

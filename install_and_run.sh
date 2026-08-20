@@ -83,7 +83,7 @@ echo "Compiling app icon..."
 xcrun actool "$ASSETS" "$APP_ICON" \
     --compile "$APP/Contents/Resources" \
     --platform macosx \
-    --minimum-deployment-target 13.0 \
+    --minimum-deployment-target 26.0 \
     --app-icon AppIcon \
     --output-partial-info-plist /dev/null >/dev/null
 ICON_PLIST_ENTRIES="    <key>CFBundleIconFile</key>
@@ -111,7 +111,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
+    <string>26.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSPrincipalClass</key>

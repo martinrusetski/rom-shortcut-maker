@@ -7,7 +7,7 @@ cask "rom-shortcut-maker" do
   desc "Generate native macOS launchers for your ROMs from installed emulators"
   homepage "https://github.com/martinrusetski/rom-shortcut-maker"
 
-  depends_on macos: :ventura
+  depends_on macos: :tahoe
 
   app "Rom Shortcut Maker.app"
 

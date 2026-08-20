@@ -64,9 +64,6 @@ let package = Package(
                 .product(name: "ZIPFoundation", package: "ZIPFoundation")
             ],
             path: "RomShortcutMakerTests",
-            exclude: [
-                "Fixtures/README.md"
-            ],
             linkerSettings: [
                 .unsafeFlags([
                     // SwiftPM places the dynamic Sparkle framework beside the

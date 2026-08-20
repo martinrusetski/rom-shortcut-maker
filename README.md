@@ -1,102 +1,86 @@
 # Rom Shortcut Maker
 
-A native macOS application that scans your ROM directories, identifies each game and its platform, fetches artwork from SteamGridDB, and generates standalone `.app` launcher bundles that point at your installed emulators. Launch your ROM games directly from Finder, Spotlight, or the Dock - no Steam required.
+Rom Shortcut Maker is a native macOS app that turns your ROM library into individual Mac apps. It scans your game folders, matches each game with an installed emulator, finds artwork through SteamGridDB, and creates launchers you can open from Finder, Spotlight, Launchpad, or the Dock - without adding the games to Steam.
 
-Importing an existing Steam ROM Manager `shortcuts.vdf` is still supported as a secondary input path.
+## Features
+
+- **Direct ROM scanning** - add one or more folders and combine them into a single searchable library.
+- **Automatic platform detection** - recognizes games from their folder structure, file extensions, disc formats, and supported ZIP contents.
+- **Installed emulator discovery** - finds compatible standalone emulators and RetroArch cores, with per-platform defaults and per-game overrides.
+- **Game properties** - change a title, platform, emulator, launch file, command template, or inclusion status before creating anything.
+- **SteamGridDB artwork** - automatically match artwork or search and choose a specific icon or grid image.
+- **Native Mac launchers** - creates a separate `.app` bundle for each included game.
+- **Incremental updates** - shows which launchers are new, changed, current, or need attention and rebuilds only what changed.
+- **Steam ROM Manager import** - optionally import an existing `shortcuts.vdf` library as a starting point.
+- **Automatic updates** - new versions are delivered in the app through Sparkle.
+
+## Requirements
+
+- macOS 26 or later
+- Apple Silicon Mac
+- At least one supported emulator for the games you want to launch
+- A free SteamGridDB API key if you want automatic artwork
+
+Rom Shortcut Maker does not include emulators, games, console firmware, or BIOS files.
 
 ## Installation
 
-**Homebrew (recommended):**
+### Homebrew (recommended)
 
 ```sh
 brew tap martinrusetski/rom-shortcut-maker https://github.com/martinrusetski/rom-shortcut-maker
+brew trust martinrusetski/rom-shortcut-maker
 brew install --cask rom-shortcut-maker
 ```
 
-The cask clears the quarantine attribute automatically, so the app launches without a Gatekeeper prompt, and updates install in place with `brew upgrade`.
+The `brew trust` step allows Homebrew to load the cask from this non-official tap. Homebrew installs the app in `/Applications` and clears its quarantine attribute automatically. Update it later with:
 
-**Direct download:** Grab the latest `RomShortcutMaker-vX.Y.Z.dmg` from [Releases](https://github.com/martinrusetski/rom-shortcut-maker/releases), drag the app to Applications, then - because the app is ad-hoc signed rather than notarized - run once:
+```sh
+brew upgrade --cask rom-shortcut-maker
+```
+
+### DMG
+
+Download the latest DMG from [Releases](https://github.com/martinrusetski/rom-shortcut-maker/releases), open it, and drag **Rom Shortcut Maker** to **Applications**.
+
+The app is ad-hoc signed but not notarized, so macOS may block the first launch. Open Terminal and run:
 
 ```sh
 xattr -cr "/Applications/Rom Shortcut Maker.app"
 ```
 
-Either way, once installed the app updates itself in the background (via Sparkle) - you won't need to repeat these steps for future versions.
+Then open the app normally. You can also use **System Settings > Privacy & Security > Open Anyway**.
 
-## Key Features
+## Usage
 
-- **Direct ROM scanning**: Point it at a ROM directory and it walks the tree, identifying games and platforms. Single-ROM ZIP archives are identified from their contents without extraction; ambiguous, unreadable, or multi-ROM archives stay unresolved. Arcade ROM-set ZIPs keep their folder-based behavior.
-- **DOS packages**: A `DOS`, `MS-DOS`, or `MSDOS` folder treats each immediate subfolder as one game, even when it contains many executables and data files. Startup programs, autoexec-enabled DOSBox configurations, archives, and disk images are inspected explicitly; ambiguous folders ask which file to start, setup utilities remain separate, and corrupt packages are blocked with a concrete explanation. Loose `.dosz` archives are also supported outside a DOS folder.
-- **Searchable game library**: Review every game in one compact table, change its platform or emulator inline, and use status icons and filters to find included, changed, or unresolved games.
-- **Emulator resolution**: Detects installed standalone emulators and RetroArch cores, and offers every runnable option per game. ZIP games are offered only to emulators with confirmed ZIP support. Set a default emulator per platform, or override per game.
-- **Game properties editor**: Edit the display name, platform, emulator, launch file, and advanced command template in a focused inspector. Changes are saved automatically, including title edits as you type.
-- **Artwork from SteamGridDB**: Browse and choose from multiple icon results, with grid artwork as a fallback for obscure titles. Downloaded artwork is cached on disk and reused across re-scans.
-- **Live generation plan**: Every selected game is labelled **New**, **Update**, **Up to date**, or **Needs Attention** before generation. The footer reports the exact number of apps that will be created or updated.
-- **Native app bundles**: Generates `.app` bundles with a single, correctly shell-escaped launch command - no double-escaping.
-- **Incremental updates**: Only regenerates bundles when the title, ROM, emulator, arguments, output location, or artwork change. ROM hashes are cached by mtime/size so multi-GB ISOs aren't re-hashed every scan.
-- **Steam VDF import**: Bridges a legacy `shortcuts.vdf` into the same pipeline.
-- **Direct distribution**: Shells out to emulators, `sips`, and `iconutil`; not sandboxed and not shipped via the Mac App Store.
+1. Open **Rom Shortcut Maker > Settings** and add the folders containing your ROMs under **Watched Folders**. You can also drag a folder onto the main window.
+2. Open **Emulators** in Settings. The app detects installed standalone emulators and RetroArch cores; choose a default for each platform when more than one option is available.
+3. Add your SteamGridDB API key under **Artwork** if you want artwork to be downloaded automatically.
+4. Review the library. Search or filter the list, clear the checkbox beside any game you do not want, and change its platform or emulator when needed.
+5. Double-click a game to edit its title, launch settings, or artwork. Games marked **Needs Attention** must be resolved before their launchers can be created.
+6. Choose an **Output** folder and click **Create Shortcuts**.
+7. Open the generated apps from your output folder like any other Mac app.
 
-## Building & Testing
+The app remembers your library settings and only recreates launchers whose ROM, emulator, arguments, output location, title, or artwork changed.
 
-- **Build system:** SwiftPM is canonical. `Package.swift` builds the whole app (`@main` included) and links Sparkle. For a GUI dev loop, open `RomShortcutMaker/Package.swift` directly in Xcode and press ⌘R - no `.xcodeproj` needed. (The legacy `RomShortcutMaker.xcodeproj` is untracked and no longer required.)
-- **Headless tests (canonical):** `cd RomShortcutMaker && swift test`. Runs the logic suite without launching the GUI.
-- **Release build:** `./make-dmg.sh v0.1.0` assembles `Rom Shortcut Maker.app` and a DMG locally - the same steps CI runs on a tag push.
-- **Minimum OS:** macOS 26.
+## Special Library Formats
 
-## Quick Start
+- **DOS games** - place each game in its own subfolder inside a folder named `DOS`, `MS-DOS`, or `MSDOS`. Rom Shortcut Maker inspects the package and lets you choose the startup program when it cannot determine one safely.
+- **PlayStation 4** - install the game in shadPS4, then add a `.ps4` text file containing its CUSA serial. The filename becomes the shortcut name.
+- **PlayStation Vita** - install the game in Vita3K, then add a `.psvita` text file containing its title ID.
+- **ScummVM** - add a `.scummvm` text file containing the full ScummVM game ID inside the game's data folder.
+- **Multi-disc games** - supported playlist and disc-set formats are passed to compatible emulators using their required launch behavior.
 
-1. Add one or more **Watched Folders** in Settings. They are scanned together into one library; you can also drag a folder onto the main window to add it to the watchlist.
-2. To load an existing Steam ROM library, use **Settings > General > Steam Import** and choose its `shortcuts.vdf` file.
-3. Review the library table. Use search and the **Included**, **Changed**, and **Needs Attention** filters to focus the list. Clear a row's checkbox to exclude it from generation.
-4. Change a game's platform or emulator directly in the table. Double-click it or click **Edit…** for title, artwork, launch, and advanced properties. Changes update the generation plan immediately.
-   For a DOS folder with multiple possible startup files, open Game Properties and choose **Starts with**. The selection is saved for that package; setup and configuration utilities can be run separately from the same section.
-5. In Game Properties, click **Change Artwork…** to search SteamGridDB and choose a specific icon or grid. Add your SteamGridDB API key in **Rom Shortcut Maker > Settings** if needed.
-6. Choose the **Output** folder. The footer shows exactly how many apps are new, updated, current, or need attention.
-7. Click **Create Shortcuts**. When everything is current, the action changes to **Create Shortcuts Again** if you need to recreate the included shortcuts.
-8. Launch the generated apps from Finder, Spotlight, the Dock, or Launchpad.
-
-## Emulator / System Database
-
-The curated knowledge base of platforms, folder aliases, ROM extensions, standalone emulators, and RetroArch cores lives in `RomShortcutMaker/RomShortcutMaker/Resources/emulators.json`. It is data, not code - add platforms/emulators/cores by editing the JSON (the test suite validates that every referenced emulator maps to a real `EmulatorType`).
-
-### Platform-specific library entries
-
-- **Xbox:** put XISO-compatible `.iso` images in an `Xbox` folder. They launch through xemu with `-dvd_path`.
-- **Xbox 360:** XeniOS and Xenia-Edge accept `.iso`, `.xex`, `.zar`, `.con`, `.live`, and `.pirs` entries from an `Xbox 360` folder. Both are early macOS emulators with game-dependent compatibility; XeniOS is preferred because it is Apple-focused.
-- **PS4:** install the game in shadPS4, then create a small `.ps4` text file in a `PS4` folder. Name it after the game and put only its CUSA serial inside, for example `Sonic Mania.ps4` containing `CUSA07010`. Both the shadPS4 Qt launcher and standalone CLI are supported.
-- **PS Vita:** install the game in Vita3K, then create a small `.psvita` text file containing its title ID, for example `PCSF00024`. The filename becomes the shortcut name.
-- **Switch:** Ryubing and Astris are the configured current launchers. Put `.nsp`, `.xci`, `.nro`, or `.nca` files in a `Switch` folder.
-- **Game Boy / GBA / DS:** SkyEmu is available alongside the existing specialist emulators. Nintendo DS support in SkyEmu is still beta quality, so melonDS remains the first DS choice.
-- **Saturn:** Ymir is the first standalone choice for `.cue`, `.chd`, `.m3u`, `.ccd`, and `.mds` disc entries. It requires macOS 15 or later and a Saturn BIOS.
-- **DOS:** DOSBox Staging and DOSBox-X are preferred ahead of legacy DOSBox. Game-specific `.conf` files launch through each emulator's explicit `-conf` mode.
-- **ScummVM:** create a small `.scummvm` text file inside each game's data folder containing its full ScummVM game ID, for example `scumm:monkey`. The file's name becomes the shortcut name.
-- **Atari ST:** put `.st`, `.msa`, `.stx`, `.dim`, `.ipf`, or `.ctr` images in an `Atari ST` folder. Hatari receives the image path directly.
-- **3DO:** the maintained option is RetroArch's Opera core. Installed cores are discovered dynamically through their metadata; Opera maps to 3DO automatically and supports `.iso`, `.bin`, `.chd`, and `.cue` images. A compatible 3DO BIOS must be placed in RetroArch's System directory.
-- **Commodore 64:** VICE remains configured because its explicit `-autostart` interface is reliable. VirtualC64 and Denise are recommended native apps, but they are not added until their direct-launch behavior can be confirmed.
+Emulator compatibility varies by platform and game. Rom Shortcut Maker only offers emulator choices it can identify and launch with a supported command format.
 
 ## Troubleshooting
 
-- **App won't open** ("damaged"): `xattr -cr "/path/to/Rom Shortcut Maker.app"`
-- **No emulator for a game**: install the emulator (or configure its path in Settings); the row shows "No emulator" until one is available.
-- **Needs Attention status**: open Game Properties and assign a recognized platform and an installed emulator before generating.
-- **No artwork results**: set a SteamGridDB API key in Settings, then adjust the artwork search title if the detected game name is too specific. Retro titles can use grid results when no icon is available.
+- **The app is reported as damaged** - clear quarantine with `xattr -cr "/Applications/Rom Shortcut Maker.app"`.
+- **No emulator appears for a game** - install a compatible emulator, then click **Check Again** under **Settings > Emulators**. You can also configure a custom app location there.
+- **A game needs attention** - open its properties and assign a recognized platform, compatible emulator, and launch file when required.
+- **Artwork is missing** - add a SteamGridDB API key under **Settings > Artwork**, then open the game's properties and choose **Change Artwork...**.
+- **A ZIP is unresolved** - archives containing no recognized ROM or more than one possible ROM are intentionally left unresolved. Extract or reorganize the archive before rescanning.
 
-## Development
+## License
 
-Design and phased implementation plan: `DESIGN_PLAN.md`. Specs: `docs/specs/rom-launcher-wrapper/`.
-
-- **Language**: Swift / SwiftUI
-- **Minimum OS**: macOS 26
-- **License**: TBD
-
-### Releasing
-
-Pushing a `vX.Y.Z` tag triggers `.github/workflows/release.yml`, which runs the tests, builds and ad-hoc-signs `Rom Shortcut Maker.app`, embeds Sparkle, produces a DMG, signs it with the Sparkle EdDSA key (`SPARKLE_PRIVATE_KEY` secret), prepends an entry to `appcast.xml`, updates `Casks/rom-shortcut-maker.rb`, commits both back to `main`, and creates the GitHub Release with the DMG attached.
-
-```sh
-git tag -a v0.1.0 -m "Release notes go in the tag body (they become the release notes)"
-git push origin v0.1.0
-```
-
-Sparkle auto-updates and the Homebrew cask both read from the committed `appcast.xml` / cask, so a single tag push updates every distribution channel.
+[MIT](LICENSE)
