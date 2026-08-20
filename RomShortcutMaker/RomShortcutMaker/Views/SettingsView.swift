@@ -126,26 +126,6 @@ private struct GeneralPane: View {
                         .foregroundColor(.secondary).lineLimit(1).truncationMode(.middle)
                 }
             }
-            Section("Detection") {
-                LabeledContent("Hash database") {
-                    Text(viewModel.hashDatabasePath.isEmpty ? "Not configured" : viewModel.hashDatabasePath)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                HStack {
-                    Button("Choose JSON…") {
-                        if let url = FilePicker.chooseFile(title: "Choose Hash Database", extensions: ["json"]) {
-                            viewModel.setHashDatabase(url: url)
-                        }
-                    }
-                    Button("Clear") { viewModel.setHashDatabase(url: nil) }
-                        .disabled(viewModel.hashDatabasePath.isEmpty)
-                }
-                Text("Optional exact SHA-1 matches. Unknown files are hashed only when this is configured.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
         }
         .formStyle(.grouped)
         .padding()

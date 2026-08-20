@@ -43,7 +43,6 @@ final class MainViewModel: ObservableObject {
     @Published var outputDirectory: String = ""
     @Published var sourceMode: SourceMode = .scan
     @Published var steamGridDBApiKey: String = ""
-    @Published var hashDatabasePath: String = ""
     @Published var removeOrphanedBundles: Bool = false
     @Published var isProcessing: Bool = false
     @Published private(set) var operation: Operation = .idle
@@ -167,7 +166,6 @@ final class MainViewModel: ObservableObject {
         watchedFolders = config.watchedFolders
         removeOrphanedBundles = config.removeOrphanedBundles
         steamGridDBApiKey = config.steamGridDBApiKey ?? ""
-        hashDatabasePath = config.hashDatabasePath ?? ""
         sourceMode = SourceMode(rawValue: config.sourceMode) ?? .scan
         lastConversionDate = config.lastConversionDate
         detectionByKey = [:]
@@ -178,7 +176,6 @@ final class MainViewModel: ObservableObject {
         config.watchedFolders = watchedFolders
         config.removeOrphanedBundles = removeOrphanedBundles
         config.steamGridDBApiKey = steamGridDBApiKey.isEmpty ? nil : steamGridDBApiKey
-        config.hashDatabasePath = hashDatabasePath.isEmpty ? nil : hashDatabasePath
         config.sourceMode = sourceMode.rawValue
         config.lastConversionDate = lastConversionDate
         let snapshot = config
@@ -299,27 +296,10 @@ final class MainViewModel: ObservableObject {
             if unavailableCount == watchedFolders.count {
                 throw ROMScanner.ScanError.directoryNotReadable(URL(fileURLWithPath: watchedFolders[0]))
             }
-            let hashInputs = discovered.compactMap { rom -> LocalHashInput? in
-                guard rom.platform == nil else { return nil }
-                return LocalHashInput(
-                    path: rom.url.standardizedFileURL.path,
-                    fileSize: rom.fileSize
-                )
-            }
-            let hashMatches = try await LocalHashDatabase.matches(
-                inputs: hashInputs,
-                databaseURL: hashDatabasePath.isEmpty ? nil : URL(fileURLWithPath: hashDatabasePath)
-            )
             emulatorConfig.refreshDetection()
-            games = discovered.map {
-                makeEntry(
-                    from: $0,
-                    hashMatch: hashMatches[$0.url.standardizedFileURL.path]
-                )
-            }
+            games = discovered.map { makeEntry(from: $0) }
             detectionByKey = Dictionary(uniqueKeysWithValues: zip(games, discovered).compactMap { game, rom in
-                let hashMatch = hashMatches[rom.url.standardizedFileURL.path]
-                guard let detection = enrichedDetection(rom.detection, hashMatch: hashMatch) else { return nil }
+                guard let detection = rom.detection else { return nil }
                 return (game.stableKey, detection)
             })
             applyFolderPlatformRules(to: &games)
@@ -339,7 +319,7 @@ final class MainViewModel: ObservableObject {
         }
     }
 
-    private func makeEntry(from rom: DiscoveredROM, hashMatch: LocalHashMatch? = nil) -> GameEntry {
+    private func makeEntry(from rom: DiscoveredROM) -> GameEntry {
         // A multi-disc game with no existing .m3u gets a generated playlist (in
         // our app folder, absolute paths) as its launch target.
         var romPath = rom.url
@@ -352,12 +332,9 @@ final class MainViewModel: ObservableObject {
         // The parser still runs for romMetadata, but a scanner-provided title
         // hint (e.g. a PS3 PARAM.SFO TITLE) beats the filename-derived title.
         let metadata = filenameParser.parse(filename: rom.url.lastPathComponent)
-        let hashPlatform = hashMatch.flatMap { match in
-            database.allPlatforms.first { $0.id == match.platformID }
-        }
-        let platform = rom.platform ?? hashPlatform ?? Platform(id: "unknown", displayName: "Unknown")
+        let platform = rom.platform ?? Platform(id: "unknown", displayName: "Unknown")
         var entry = GameEntry(
-            title: rom.titleHint ?? hashMatch?.title ?? metadata.title,
+            title: rom.titleHint ?? metadata.title,
             romPath: romPath,
             romMetadata: metadata,
             platform: platform,
@@ -374,21 +351,6 @@ final class MainViewModel: ObservableObject {
             assignEmulator(&entry, choice: choice)
         }
         return entry
-    }
-
-    private func enrichedDetection(
-        _ detection: PlatformDetectionInfo?,
-        hashMatch: LocalHashMatch?
-    ) -> PlatformDetectionInfo? {
-        guard var detection,
-              let hashMatch,
-              let platform = database.allPlatforms.first(where: { $0.id == hashMatch.platformID }) else {
-            return detection
-        }
-        detection.candidates = [platform]
-        detection.evidence.append("Exact local hash database match.")
-        detection.resolvedBy = "local hash database"
-        return detection
     }
 
     private func assignEmulator(_ entry: inout GameEntry, choice: EmulatorChoice) {
@@ -887,11 +849,6 @@ final class MainViewModel: ObservableObject {
     }
 
     func saveSettings() { persist() }
-
-    func setHashDatabase(url: URL?) {
-        hashDatabasePath = url?.path ?? ""
-        persist()
-    }
 
     // MARK: - Per-game overrides & Properties
 

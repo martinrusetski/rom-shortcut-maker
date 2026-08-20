@@ -640,7 +640,6 @@ final class MainViewModelTests: XCTestCase {
         """.data(using: .utf8)!
         let decoded = try JSONDecoder().decode(AppConfigurationV2.self, from: legacyJSON)
         XCTAssertEqual(decoded.folderPlatformRules, [:])
-        XCTAssertNil(decoded.hashDatabasePath)
         XCTAssertEqual(decoded.version, 2)
     }
 
@@ -697,37 +696,6 @@ final class MainViewModelTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 20_000_000)
 
         XCTAssertEqual(store.saveCount, 1)
-    }
-
-    func testScanUsesConfiguredLocalHashMatch() async throws {
-        let romURL = tempDir.appendingPathComponent("Known.iso")
-        try Data("hello".utf8).write(to: romURL)
-        let databaseURL = tempDir.appendingPathComponent("hashes.json")
-        try Data("""
-        [{"sha1":"aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d","size":5,"platform":"ps2","title":"Known Game"}]
-        """.utf8).write(to: databaseURL)
-
-        let vm = makeViewModel(
-            roms: [unknownROM(romURL.path, fileSize: 5)],
-            store: InMemoryRomConfigStore()
-        )
-        vm.hashDatabasePath = databaseURL.path
-        await vm.scan()
-
-        XCTAssertEqual(vm.games[0].platform.id, "ps2")
-        XCTAssertEqual(vm.games[0].title, "Known Game")
-        XCTAssertEqual(vm.detectionInfo(for: vm.games[0])?.resolvedBy, "local hash database")
-    }
-
-    func testScanSurfacesMalformedHashDatabase() async throws {
-        let databaseURL = tempDir.appendingPathComponent("hashes.json")
-        try Data("not json".utf8).write(to: databaseURL)
-        let vm = makeViewModel(roms: [unknownROM("/ROMs/Loose/Mystery.mds")])
-        vm.hashDatabasePath = databaseURL.path
-
-        await vm.scan()
-
-        XCTAssertTrue(vm.errorMessage?.contains("Invalid hash database") ?? false)
     }
 
     private func waitForSaves(in store: CountingRomConfigStore, minimum: Int) async {

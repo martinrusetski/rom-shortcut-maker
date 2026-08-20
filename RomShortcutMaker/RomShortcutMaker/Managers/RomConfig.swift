@@ -39,7 +39,6 @@ struct AppConfigurationV2: Codable, Equatable {
     var outputDirectory: String?
     var removeOrphanedBundles: Bool
     var steamGridDBApiKey: String?
-    var hashDatabasePath: String?
     var gameOverrides: [String: GameOverride]
     var lastConversionDate: Date?
     /// v1 custom names (keyed by Steam appID), preserved through migration so they
@@ -56,7 +55,6 @@ struct AppConfigurationV2: Codable, Equatable {
         outputDirectory: String? = nil,
         removeOrphanedBundles: Bool = false,
         steamGridDBApiKey: String? = nil,
-        hashDatabasePath: String? = nil,
         gameOverrides: [String: GameOverride] = [:],
         lastConversionDate: Date? = nil,
         legacyCustomNames: [UInt32: String] = [:],
@@ -68,7 +66,6 @@ struct AppConfigurationV2: Codable, Equatable {
         self.outputDirectory = outputDirectory
         self.removeOrphanedBundles = removeOrphanedBundles
         self.steamGridDBApiKey = steamGridDBApiKey
-        self.hashDatabasePath = hashDatabasePath
         self.gameOverrides = gameOverrides
         self.lastConversionDate = lastConversionDate
         self.legacyCustomNames = legacyCustomNames
@@ -85,7 +82,6 @@ struct AppConfigurationV2: Codable, Equatable {
         outputDirectory = try c.decodeIfPresent(String.self, forKey: .outputDirectory)
         removeOrphanedBundles = try c.decodeIfPresent(Bool.self, forKey: .removeOrphanedBundles) ?? false
         steamGridDBApiKey = try c.decodeIfPresent(String.self, forKey: .steamGridDBApiKey)
-        hashDatabasePath = try c.decodeIfPresent(String.self, forKey: .hashDatabasePath)
         gameOverrides = try c.decodeIfPresent([String: GameOverride].self, forKey: .gameOverrides) ?? [:]
         lastConversionDate = try c.decodeIfPresent(Date.self, forKey: .lastConversionDate)
         legacyCustomNames = try c.decodeIfPresent([UInt32: String].self, forKey: .legacyCustomNames) ?? [:]
