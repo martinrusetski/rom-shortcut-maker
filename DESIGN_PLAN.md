@@ -10,7 +10,7 @@
 
 ### 0.1 What this project is
 
-We are evolving the existing **SteamShortcutConverter** macOS app into **Rom Shortcut Maker**:
+This project evolved the original **SteamShortcutConverter** macOS app into **Rom Shortcut Maker**:
 a tool that scans ROM directories directly, identifies games and their platforms, fetches
 artwork from SteamGridDB, and generates `.app` launcher bundles that point at external
 emulators. The legacy Steam `shortcuts.vdf` import becomes a secondary input path, not the
@@ -28,20 +28,15 @@ intact** and reused only behind the import bridge. Budget accordingly: most code
 
 ### 0.3 How to build and test — READ THIS
 
-- **Tests run headlessly via SPM:** `cd SteamShortcutConverter && swift test`. This is the
+- **Tests run headlessly via SPM:** `cd RomShortcutMaker && swift test`. This is the
   canonical test command. It builds the logic into a library and runs the suite **without
   launching the GUI**.
-- **The app builds via Xcode:** `xcodebuild -project SteamShortcutConverter.xcodeproj -scheme
-  SteamShortcutConverter -configuration Debug build`.
-- **DO NOT run `xcodebuild test` or Xcode ⌘U.** The Xcode test target is currently hosted
-  inside the app target; running it launches the GUI app, which traps on launch under the test
-  runner and spams crash dialogs. Use `swift test`.
-- **`Package.swift` is the test harness.** Its library target compiles the source directory
-  **excluding `SteamShortcutConverterApp.swift`** (the `@main` entry). **Every new source file
-  you add under `SteamShortcutConverter/SteamShortcutConverter/` is automatically picked up by
-  the SPM target.** If you add a new `@main`-like or executable-only file, add it to the
-  `exclude:` list. If you add test resource files, make sure they don't break the test target's
-  `exclude:` list.
+- **The app builds via SwiftPM:** run `swift build` in `RomShortcutMaker/`, or open
+  `RomShortcutMaker/Package.swift` in Xcode and press ⌘R. The legacy `.xcodeproj` is untracked
+  and is not a maintained build system.
+- **Use `swift test` for tests.** The SwiftPM executable target contains the `@main` entry and
+  all source files under `RomShortcutMaker/RomShortcutMaker/`; the test target imports that
+  module directly. If you add test resource files, keep the test target's `exclude:` list valid.
 - **Deployment target is macOS 13** (the SPM platform and the Xcode target must stay in sync;
   the UI already uses macOS 13 APIs like `LabeledContent`).
 
@@ -70,17 +65,11 @@ makes it impossible to test hermetically. **Do not repeat this pattern.**
 - Treat a single path field as a single path — do **not** split paths on spaces (another bug
   just fixed). Paths with spaces are normal on macOS.
 
-### 0.6 Rename strategy (do this in Phase A0, low-risk)
+### 0.6 Rename strategy (completed)
 
-Do **not** rename the Xcode target, scheme, or SPM module — that breaks DerivedData, signing,
-and `@testable import SteamShortcutConverter`. Instead:
-
-- Change **user-facing strings** (window title, headers) to "Rom Shortcut Maker".
-- Change the **generated bundle identifier prefix** from `com.steamshortcutconverter.` to
-  `com.romshortcutmaker.` (this is in `MainViewModel.createAppBundleConfig`, moving to the new
-  bundle generator).
-- Leave file-header comments and the module name as `SteamShortcutConverter` for now; a full
-  module rename is out of scope and not worth the churn.
+The package, executable target, test target, source folders, and entry point now use
+`RomShortcutMaker`. User-facing strings use "Rom Shortcut Maker", and generated bundle
+identifiers use the `com.romshortcutmaker.` prefix.
 
 ### 0.7 Distribution / sandboxing — decided
 
@@ -184,7 +173,7 @@ visible "Steam Shortcut Converter" UI strings.
 **Files:**
 - `Models/DataModels.swift` (add `GameEntry`, `ROMMetadata`, `ArtworkStatus`, `GameSource`)
 - `Scanner/ROMFilenameParser.swift` (new)
-- `SteamShortcutConverterTests/ROMFilenameParserTests.swift` (new)
+- `RomShortcutMakerTests/ROMFilenameParserTests.swift` (new)
 
 **Spec — `ROMFilenameParser`:**
 
@@ -232,7 +221,7 @@ emulators, cores) and must be editable/diffable/testable without recompiling enu
 - `Protocols/Protocols.swift` (keep `EmulatorType` enum as the canonical list of *identifiers*
   and its `executablePatterns` for detection; the rich metadata moves to JSON keyed by the enum
   `rawValue`)
-- `SteamShortcutConverterTests/SystemDatabaseTests.swift` (new)
+- `RomShortcutMakerTests/SystemDatabaseTests.swift` (new)
 - `Resources/` must be declared in **both** `Package.swift` (as a target resource) **and** the
   Xcode target (Copy Bundle Resources). Load via `Bundle.module` in SPM context and
   `Bundle.main` in app context — provide a small `Bundle` resolver that tries `.module` then
@@ -361,7 +350,7 @@ priority is the key design decision here.**
 
 **Files:**
 - `Scanner/ROMScanner.swift` (new)
-- `SteamShortcutConverterTests/ROMScannerTests.swift` (new)
+- `RomShortcutMakerTests/ROMScannerTests.swift` (new)
 
 **Spec:**
 

@@ -6,8 +6,8 @@ Implementation-ready plan for five issues found after the single-window redesign
 
 - Work in `/Users/martinr/Developer/rom-shortcut-maker`, branch `feature/rom-shortcut-maker`.
 - **First action before any code change**: the working tree has staged, uncommitted changes from the UI redesign (see `git status`). Commit them as-is with message `Single-window UI redesign: NavigationSplitView shell, Game Properties window, Settings scene` (plus the standard Co-Authored-By trailer) so the fix commits stay clean. Do not modify those files as part of that commit.
-- Tests: `cd SteamShortcutConverter && swift test` (SPM; `Package.swift` globs all sources, so new files need no manifest edits — the `.xcodeproj` is gitignored and must not be touched). Never run `xcodebuild test`.
-- Verify compilation with `swift build` inside `SteamShortcutConverter/` as you go; run the full `swift test` before each commit.
+- Tests: `cd RomShortcutMaker && swift test` (SPM; `Package.swift` globs all sources, so new files need no manifest edits — the `.xcodeproj` is gitignored and must not be touched). Never run `xcodebuild test`.
+- Verify compilation with `swift build` inside `RomShortcutMaker/` as you go; run the full `swift test` before each commit.
 - One commit per issue, message prefixed like the existing history (imperative, no ticket numbers). End commit messages with `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
 - Match existing code style: comment density, MARK sections, dependency injection, no I/O in inits. Rows in the main list must stay value-typed (they must NOT observe the ViewModel) — that's a hard performance requirement from the redesign.
 - If an existing test asserts something your change legitimately alters (e.g. platform counts in `SystemDatabaseTests`), update the test with the change, not in a separate commit.
@@ -124,7 +124,7 @@ Tests: (a) `ParamSFO` unit test with a fixture built in-test (assemble bytes for
 
 ## Acceptance checklist (run before finishing)
 
-1. `swift test` green, `swift build` clean (both from `SteamShortcutConverter/`).
+1. `swift test` green, `swift build` clean (both from `RomShortcutMaker/`).
 2. Five fix commits + the initial redesign commit, each self-contained.
 3. Grep sanity: no view passes `MainViewModel` into `GameListRow`; `GameOverride` remains the single persistence point for per-game state.
 4. Leave the working tree clean (everything committed).

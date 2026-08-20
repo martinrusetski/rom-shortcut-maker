@@ -1,0 +1,214 @@
+//
+//  IncrementalUpdateManagerGameTests.swift
+//  RomShortcutMakerTests
+//
+//  Tests for the ROM-pipeline (GameEntry) incremental update path.
+//
+
+import XCTest
+@testable import RomShortcutMaker
+
+final class IncrementalUpdateManagerGameTests: XCTestCase {
+
+    var manager: IncrementalUpdateManager!
+    var tempDir: URL!
+
+    override func setUpWithError() throws {
+        manager = IncrementalUpdateManager()
+        tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("IncrGameTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: tempDir)
+        manager = nil
+        tempDir = nil
+    }
+
+    // MARK: - Helpers
+
+    @discardableResult
+    private func writeROM(_ name: String, bytes: [UInt8]) throws -> URL {
+        let url = tempDir.appendingPathComponent(name)
+        try Data(bytes).write(to: url)
+        return url
+    }
+
+    private func makeBundleDir(_ name: String) throws -> URL {
+        let url = tempDir.appendingPathComponent(name)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    private func makeEntry(rom: URL, args: [String] = ["{romPath}"]) -> GameEntry {
+        GameEntry(
+            title: "Game",
+            romPath: rom,
+            romMetadata: ROMMetadata(rawFilename: rom.lastPathComponent, title: "Game"),
+            platform: Platform(id: "snes", displayName: "SNES"),
+            emulatorPath: URL(fileURLWithPath: "/Applications/Snes9x.app"),
+            launchArguments: args
+        )
+    }
+
+    // MARK: - Detection
+
+    func testAllNewWithoutPreviousState() throws {
+        let entry = makeEntry(rom: try writeROM("a.sfc", bytes: [1, 2, 3]))
+        let changes = manager.detectChanges(currentGames: [entry], previousState: nil, outputDirectory: nil)
+        XCTAssertEqual(changes[entry.stableKey]?.changeType, .new)
+    }
+
+    func testUnchanged() throws {
+        let entry = makeEntry(rom: try writeROM("a.sfc", bytes: [1, 2, 3]))
+        let bundle = try makeBundleDir("Game.app")
+        let state = GameConversionState(convertedGames: [
+            manager.buildConvertedGame(for: entry, bundlePath: bundle.path)
+        ])
+        let changes = manager.detectChanges(currentGames: [entry], previousState: state, outputDirectory: nil)
+        XCTAssertEqual(changes[entry.stableKey]?.changeType, .unchanged)
+    }
+
+    func testModifiedWhenArgsChange() throws {
+        let rom = try writeROM("a.sfc", bytes: [1, 2, 3])
+        let original = makeEntry(rom: rom)
+        let bundle = try makeBundleDir("Game.app")
+        let state = GameConversionState(convertedGames: [
+            manager.buildConvertedGame(for: original, bundlePath: bundle.path)
+        ])
+        let changed = makeEntry(rom: rom, args: ["--fullscreen", "{romPath}"])
+        let changes = manager.detectChanges(currentGames: [changed], previousState: state, outputDirectory: nil)
+        XCTAssertEqual(changes[changed.stableKey]?.changeType, .modified)
+    }
+
+    func testModifiedWhenTitleChanges() throws {
+        let entry = makeEntry(rom: try writeROM("a.sfc", bytes: [1, 2, 3]))
+        let bundle = try makeBundleDir("Game.app")
+        let state = GameConversionState(convertedGames: [
+            manager.buildConvertedGame(for: entry, bundlePath: bundle.path)
+        ])
+        var renamed = entry
+        renamed.title = "Renamed Game"
+
+        let changes = manager.detectChanges(
+            currentGames: [renamed], previousState: state, outputDirectory: tempDir)
+
+        XCTAssertEqual(changes[renamed.stableKey]?.changeType, .modified)
+    }
+
+    func testModifiedWhenArtworkChangesAtSamePath() throws {
+        var entry = makeEntry(rom: try writeROM("a.sfc", bytes: [1, 2, 3]))
+        let artwork = try writeROM("original.png", bytes: [1, 2, 3])
+        entry.artworkStatus = .cached(artwork)
+        let bundle = try makeBundleDir("Game.app")
+        let state = GameConversionState(convertedGames: [
+            manager.buildConvertedGame(for: entry, bundlePath: bundle.path)
+        ])
+
+        try Data([9, 8, 7, 6]).write(to: artwork, options: .atomic)
+        let changes = manager.detectChanges(
+            currentGames: [entry], previousState: state, outputDirectory: tempDir)
+
+        XCTAssertEqual(changes[entry.stableKey]?.changeType, .modified)
+    }
+
+    func testModifiedWhenOutputDirectoryChanges() throws {
+        let entry = makeEntry(rom: try writeROM("a.sfc", bytes: [1, 2, 3]))
+        let bundle = try makeBundleDir("Game.app")
+        let state = GameConversionState(convertedGames: [
+            manager.buildConvertedGame(for: entry, bundlePath: bundle.path)
+        ])
+        let otherOutput = tempDir.appendingPathComponent("Other")
+
+        let changes = manager.detectChanges(
+            currentGames: [entry], previousState: state, outputDirectory: otherOutput)
+
+        XCTAssertEqual(changes[entry.stableKey]?.changeType, .modified)
+    }
+
+    func testModifiedWhenRetroArchCoreChanges() throws {
+        // Two RetroArch cores share the same binary path and args template; only
+        // the emulator choice differs. The bundle must still be regenerated.
+        let rom = try writeROM("a.sfc", bytes: [1, 2, 3])
+        let retroArch = URL(fileURLWithPath: "/Applications/RetroArch.app")
+        let coreArgs = ["-L", "{corePath}", "{romPath}"]
+
+        var original = makeEntry(rom: rom, args: coreArgs)
+        original.emulatorPath = retroArch
+        original.emulator = .retroArchCore(core: "snes9x_libretro.dylib")
+
+        let bundle = try makeBundleDir("Game.app")
+        let state = GameConversionState(convertedGames: [
+            manager.buildConvertedGame(for: original, bundlePath: bundle.path)
+        ])
+
+        var switched = makeEntry(rom: rom, args: coreArgs)
+        switched.emulatorPath = retroArch
+        switched.emulator = .retroArchCore(core: "bsnes_libretro.dylib")
+
+        let changes = manager.detectChanges(currentGames: [switched], previousState: state, outputDirectory: nil)
+        XCTAssertEqual(changes[switched.stableKey]?.changeType, .modified)
+    }
+
+    func testModifiedWhenBundleMissing() throws {
+        let entry = makeEntry(rom: try writeROM("a.sfc", bytes: [1, 2, 3]))
+        let state = GameConversionState(convertedGames: [
+            manager.buildConvertedGame(for: entry, bundlePath: tempDir.appendingPathComponent("Missing.app").path)
+        ])
+        let changes = manager.detectChanges(currentGames: [entry], previousState: state, outputDirectory: nil)
+        XCTAssertEqual(changes[entry.stableKey]?.changeType, .modified)
+    }
+
+    func testRedumpedROMSamePathDifferentContent() throws {
+        let rom = try writeROM("a.sfc", bytes: [1, 2, 3])
+        let entry = makeEntry(rom: rom)
+        let bundle = try makeBundleDir("Game.app")
+        let state = GameConversionState(convertedGames: [
+            manager.buildConvertedGame(for: entry, bundlePath: bundle.path)
+        ])
+        // Re-dump: same path, different content (and size).
+        try Data([9, 9, 9, 9, 9]).write(to: rom)
+        let changes = manager.detectChanges(currentGames: [entry], previousState: state, outputDirectory: nil)
+        XCTAssertEqual(changes[entry.stableKey]?.changeType, .modified)
+    }
+
+    func testRemoved() throws {
+        let entry = makeEntry(rom: try writeROM("a.sfc", bytes: [1, 2, 3]))
+        let bundle = try makeBundleDir("Game.app")
+        let state = GameConversionState(convertedGames: [
+            manager.buildConvertedGame(for: entry, bundlePath: bundle.path)
+        ])
+        let changes = manager.detectChanges(currentGames: [], previousState: state, outputDirectory: nil)
+        XCTAssertEqual(changes[entry.stableKey]?.changeType, .removed)
+        XCTAssertEqual(changes[entry.stableKey]?.previousBundlePath, bundle.path)
+    }
+
+    func testModifiedWhenMemberFileChanges() throws {
+        let cue = try writeROM("game.cue", bytes: [1, 2, 3])
+        let track = try writeROM("track01.bin", bytes: [4, 4, 4])
+        var entry = makeEntry(rom: cue)
+        entry.additionalFiles = [track]
+        let bundle = try makeBundleDir("Game.app")
+        let state = GameConversionState(convertedGames: [
+            manager.buildConvertedGame(for: entry, bundlePath: bundle.path)
+        ])
+        // Re-dump a track (entry .cue unchanged, but a member changed).
+        try Data([9, 9, 9, 9, 9]).write(to: track)
+        let changes = manager.detectChanges(currentGames: [entry], previousState: state, outputDirectory: nil)
+        XCTAssertEqual(changes[entry.stableKey]?.changeType, .modified)
+    }
+
+    // MARK: - File signature
+
+    func testFileSignatureStableThenChanges() throws {
+        let rom = try writeROM("big.iso", bytes: Array(repeating: 0xAB, count: 4096))
+        let sig = manager.romFileSignature(rom)
+        XCTAssertNotNil(sig)
+        XCTAssertEqual(manager.romFileSignature(rom), sig, "stable for an unchanged file")
+
+        // Change the file: a different size must change the signature.
+        try Data(Array(repeating: 0xCD, count: 2048)).write(to: rom)
+        XCTAssertNotEqual(manager.romFileSignature(rom), sig)
+    }
+}

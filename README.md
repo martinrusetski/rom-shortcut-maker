@@ -39,8 +39,8 @@ Either way, once installed the app updates itself in the background (via Sparkle
 
 ## Building & Testing
 
-- **Build system:** SwiftPM is canonical. `Package.swift` builds the whole app (`@main` included) and links Sparkle. For a GUI dev loop, open `SteamShortcutConverter/Package.swift` directly in Xcode and press ⌘R - no `.xcodeproj` needed. (The legacy `SteamShortcutConverter.xcodeproj` is untracked and no longer required.)
-- **Headless tests (canonical):** `cd SteamShortcutConverter && swift test`. Runs the logic suite without launching the GUI.
+- **Build system:** SwiftPM is canonical. `Package.swift` builds the whole app (`@main` included) and links Sparkle. For a GUI dev loop, open `RomShortcutMaker/Package.swift` directly in Xcode and press ⌘R - no `.xcodeproj` needed. (The legacy `RomShortcutMaker.xcodeproj` is untracked and no longer required.)
+- **Headless tests (canonical):** `cd RomShortcutMaker && swift test`. Runs the logic suite without launching the GUI.
 - **Release build:** `./make-dmg.sh v0.1.0` assembles `Rom Shortcut Maker.app` and a DMG locally - the same steps CI runs on a tag push.
 - **Minimum OS:** macOS 26.
 
@@ -58,7 +58,7 @@ Either way, once installed the app updates itself in the background (via Sparkle
 
 ## Emulator / System Database
 
-The curated knowledge base of platforms, folder aliases, ROM extensions, standalone emulators, and RetroArch cores lives in `SteamShortcutConverter/SteamShortcutConverter/Resources/emulators.json`. It is data, not code - add platforms/emulators/cores by editing the JSON (the test suite validates that every referenced emulator maps to a real `EmulatorType`).
+The curated knowledge base of platforms, folder aliases, ROM extensions, standalone emulators, and RetroArch cores lives in `RomShortcutMaker/RomShortcutMaker/Resources/emulators.json`. It is data, not code - add platforms/emulators/cores by editing the JSON (the test suite validates that every referenced emulator maps to a real `EmulatorType`).
 
 ### Platform-specific library entries
 

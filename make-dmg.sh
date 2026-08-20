@@ -11,7 +11,7 @@ DMG_FINAL="${BINARY_NAME}.dmg"
 STAGING="dmg_staging"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PKG_DIR="${SCRIPT_DIR}/SteamShortcutConverter"
+PKG_DIR="${SCRIPT_DIR}/RomShortcutMaker"
 SPARKLE_PUB_KEY="$(tr -d '[:space:]' < "${SCRIPT_DIR}/sparkle_public_key.txt" 2>/dev/null || true)"
 SPARKLE_FEED_URL="https://raw.githubusercontent.com/martinrusetski/rom-shortcut-maker/main/appcast.xml"
 VERSION="${1:-0.0.0-dev}"
@@ -31,7 +31,7 @@ cp "$BINARY" "$APP/Contents/MacOS/${BINARY_NAME}"
 
 # The app loads emulators.json via Bundle.module, which resolves the SwiftPM
 # resource bundle relative to Bundle.main.resourceURL (Contents/Resources).
-APP_RESOURCE_BUNDLE="$BIN_DIR/SteamShortcutConverter_SteamShortcutConverter.bundle"
+APP_RESOURCE_BUNDLE="$BIN_DIR/RomShortcutMaker_RomShortcutMaker.bundle"
 if [ ! -d "$APP_RESOURCE_BUNDLE" ]; then
     echo "Error: App resource bundle was not found at $APP_RESOURCE_BUNDLE" >&2
     exit 1
@@ -41,13 +41,13 @@ for RESOURCE_BUNDLE in "$BIN_DIR"/*.bundle; do
     ditto "$RESOURCE_BUNDLE" "$APP/Contents/Resources/$(basename "$RESOURCE_BUNDLE")"
 done
 
-if [ ! -f "$APP/Contents/Resources/SteamShortcutConverter_SteamShortcutConverter.bundle/Contents/Resources/emulators.json" ]; then
+if [ ! -f "$APP/Contents/Resources/RomShortcutMaker_RomShortcutMaker.bundle/Contents/Resources/emulators.json" ]; then
     echo "Error: Packaged app is missing emulators.json" >&2
     exit 1
 fi
 
-ASSETS="${PKG_DIR}/SteamShortcutConverter/Assets.xcassets"
-APP_ICON="${PKG_DIR}/SteamShortcutConverter/AppIcon.icon"
+ASSETS="${PKG_DIR}/RomShortcutMaker/Assets.xcassets"
+APP_ICON="${PKG_DIR}/RomShortcutMaker/AppIcon.icon"
 if [ ! -d "$APP_ICON" ]; then
     echo "Error: Icon Composer document was not found at $APP_ICON" >&2
     exit 1

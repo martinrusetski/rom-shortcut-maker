@@ -14,7 +14,7 @@ jobs:
       contents: write
 
     env:
-      PKG_DIR: SteamShortcutConverter
+      PKG_DIR: RomShortcutMaker
       APP_NAME: Rom Shortcut Maker
       BINARY_NAME: RomShortcutMaker
       BUNDLE_ID: com.romshortcutmaker.app
@@ -48,7 +48,7 @@ jobs:
 
           # The app loads emulators.json via Bundle.module, which resolves the
           # SwiftPM resource bundle relative to Contents/Resources.
-          APP_RESOURCE_BUNDLE="$BIN_DIR/SteamShortcutConverter_SteamShortcutConverter.bundle"
+          APP_RESOURCE_BUNDLE="$BIN_DIR/RomShortcutMaker_RomShortcutMaker.bundle"
           if [ ! -d "$APP_RESOURCE_BUNDLE" ]; then
               echo "::error::App resource bundle not found at $APP_RESOURCE_BUNDLE"
               exit 1
@@ -58,13 +58,13 @@ jobs:
               ditto "$RESOURCE_BUNDLE" "$APP_BUNDLE/Contents/Resources/$(basename "$RESOURCE_BUNDLE")"
           done
 
-          if [ ! -f "$APP_BUNDLE/Contents/Resources/SteamShortcutConverter_SteamShortcutConverter.bundle/Contents/Resources/emulators.json" ]; then
+          if [ ! -f "$APP_BUNDLE/Contents/Resources/RomShortcutMaker_RomShortcutMaker.bundle/Contents/Resources/emulators.json" ]; then
               echo "::error::Packaged app is missing emulators.json"
               exit 1
           fi
 
-          ASSETS="$PKG_DIR/SteamShortcutConverter/Assets.xcassets"
-          APP_ICON="$PKG_DIR/SteamShortcutConverter/AppIcon.icon"
+          ASSETS="$PKG_DIR/RomShortcutMaker/Assets.xcassets"
+          APP_ICON="$PKG_DIR/RomShortcutMaker/AppIcon.icon"
           if [ ! -d "$APP_ICON" ]; then
               echo "::error::Icon Composer document not found at $APP_ICON"
               exit 1

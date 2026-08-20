@@ -146,7 +146,7 @@ Keep `MainViewModel`, its DI, and existing tests intact; add rather than rewrite
 
 ## Implementation phases
 
-Each phase compiles, passes `swift test`, and is independently committable. Build with `xcodebuild -project SteamShortcutConverter.xcodeproj -scheme SteamShortcutConverter -configuration Debug build`; never `xcodebuild test`.
+Each phase compiles, passes `swift test`, and is independently committable. Build and test from `RomShortcutMaker/` with SwiftPM; the legacy `.xcodeproj` is not maintained.
 
 ### Phase 1 — Single-window rework
 Replace `TabView` with the three-zone window: source bar (choose-scans-immediately, Import from Steam button, progress), grouped collapsible game list with the new minimal rows (value-typed, async thumbnails — simple async version now, cache/downsample polish in Phase 4), generate bar with status line. Empty state. Delete `ScanView`, `ArtworkView`, `GenerateView` (fold logic in). ViewModel: `groupedGames`, `GameStatus`, `collapsedPlatforms`, selection, scan-on-choose.

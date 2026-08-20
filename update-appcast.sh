@@ -22,7 +22,7 @@ if [ -z "$SHORT_VERSION" ] || [ -z "$BUILD_VERSION" ] || [ -z "$DMG_PATH" ] || [
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PKG_DIR="${SCRIPT_DIR}/SteamShortcutConverter"
+PKG_DIR="${SCRIPT_DIR}/RomShortcutMaker"
 APPCAST="${SCRIPT_DIR}/appcast.xml"
 SIGN_UPDATE="$(find "${PKG_DIR}/.build" -name sign_update -type f -path '*bin*' | head -1)"
 
