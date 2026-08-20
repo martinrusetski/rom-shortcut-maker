@@ -7,18 +7,22 @@
 //
 
 import SwiftUI
+import AppKit
 
 struct SettingsView: View {
     @ObservedObject var viewModel: MainViewModel
 
     var body: some View {
-        TabView {
+        TabView(selection: $viewModel.settingsPane) {
             GeneralPane(viewModel: viewModel)
                 .tabItem { Label("General", systemImage: "gearshape") }
+                .tag(MainViewModel.SettingsPane.general)
             EmulatorsPane(viewModel: viewModel)
                 .tabItem { Label("Emulators", systemImage: "gamecontroller") }
+                .tag(MainViewModel.SettingsPane.emulators)
             ArtworkPane(viewModel: viewModel)
                 .tabItem { Label("Artwork", systemImage: "photo") }
+                .tag(MainViewModel.SettingsPane.artwork)
         }
     }
 }
@@ -196,11 +200,23 @@ private struct EmulatorsPane: View {
     @State private var showAll: Bool = false
 
     private var platforms: [Platform] {
-        viewModel.allPlatforms.filter { platform in
+        let candidates: [Platform]
+        if let requestedID = viewModel.emulatorSettingsPlatformID,
+           let requested = viewModel.allPlatforms.first(where: { $0.id == requestedID }) {
+            candidates = [requested]
+        } else if !viewModel.libraryPlatforms.isEmpty, !showAll {
+            candidates = viewModel.libraryPlatforms
+        } else if showAll {
+            candidates = viewModel.allPlatforms
+        } else {
+            candidates = viewModel.allPlatforms.filter {
+                !viewModel.availableOptions(for: $0).isEmpty
+            }
+        }
+        return candidates.filter { platform in
             let matchesSearch = search.isEmpty ||
                 platform.displayName.localizedCaseInsensitiveContains(search)
-            let hasOption = !viewModel.availableOptions(for: platform).isEmpty
-            return matchesSearch && (showAll || hasOption)
+            return matchesSearch
         }
     }
 
@@ -210,38 +226,105 @@ private struct EmulatorsPane: View {
                 Image(systemName: "magnifyingglass").foregroundColor(.secondary)
                 TextField("Search platforms", text: $search)
                     .textFieldStyle(.roundedBorder)
-                Toggle("Show all", isOn: $showAll)
+                if viewModel.emulatorSettingsPlatformID == nil {
+                    Toggle("All Platforms", isOn: $showAll)
+                } else {
+                    Button("Show Library Platforms") {
+                        viewModel.emulatorSettingsPlatformID = nil
+                    }
+                }
             }
-            Text("Default emulator per platform. Only installed platforms are shown unless \"Show all\" is on.")
+            Text("Installed and supported emulators for your game library. Locate an app manually if it was not detected.")
                 .font(.caption).foregroundColor(.secondary)
 
             List(platforms) { platform in
-                let options = viewModel.availableOptions(for: platform)
-                HStack {
-                    Text(platform.displayName)
-                    Spacer()
-                    if options.isEmpty {
-                        Text("Not installed").foregroundColor(.secondary).font(.caption)
+                Section(platform.displayName) {
+                    let supported = viewModel.supportedOptions(for: platform)
+                    let available = viewModel.availableOptions(for: platform)
+
+                    if supported.isEmpty && available.isEmpty {
+                        Text("No standalone emulator is configured for this platform. Install RetroArch and a compatible core, then check again.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     } else {
-                        let selectedChoice = viewModel.defaultChoiceSetting(for: platform)
-                            ?? options[0].choice
-                        FullWidthPopupPicker(
-                            options: options.map(\.choice),
-                            selection: Binding(
-                                get: { selectedChoice },
-                                set: { viewModel.setDefaultChoice($0, for: platform) }
-                            ),
-                            title: { choice in
-                                options.first { $0.choice == choice }?.displayName ?? "Choose…"
-                            },
-                            accessibilityLabel: "Default emulator for \(platform.displayName)"
-                        )
-                        .frame(width: 240, height: 24)
+                        ForEach(supported, id: \.choice) { option in
+                            EmulatorSetupRow(
+                                viewModel: viewModel,
+                                platform: platform,
+                                option: option,
+                                isAvailable: available.contains(where: { $0.choice == option.choice }),
+                                isDefault: effectiveDefault(for: platform, available: available) == option.choice
+                            )
+                        }
+                        ForEach(available.filter { installed in
+                            !supported.contains(where: { $0.choice == installed.choice })
+                        }, id: \.choice) { option in
+                            EmulatorSetupRow(
+                                viewModel: viewModel,
+                                platform: platform,
+                                option: option,
+                                isAvailable: true,
+                                isDefault: effectiveDefault(for: platform, available: available) == option.choice
+                            )
+                        }
                     }
                 }
             }
         }
         .padding()
+        .onAppear { viewModel.refreshEmulators() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            viewModel.refreshEmulators()
+        }
+    }
+
+    private func effectiveDefault(for platform: Platform, available: [EmulatorOption]) -> EmulatorChoice? {
+        viewModel.defaultChoiceSetting(for: platform) ?? available.first?.choice
+    }
+}
+
+private struct EmulatorSetupRow: View {
+    @ObservedObject var viewModel: MainViewModel
+    let platform: Platform
+    let option: EmulatorOption
+    let isAvailable: Bool
+    let isDefault: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(option.displayName)
+                Text(isAvailable ? "Installed" : "Not found")
+                    .font(.caption)
+                    .foregroundStyle(isAvailable ? Color.secondary : Color.orange)
+            }
+
+            Spacer()
+
+            if isAvailable {
+                if isDefault {
+                    Label("Default", systemImage: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                } else {
+                    Button("Use as Default") {
+                        viewModel.setDefaultChoice(option.choice, for: platform)
+                    }
+                    .controlSize(.small)
+                }
+            } else if case .standalone(let type) = option.choice {
+                Button("Locate App…") {
+                    if let url = FilePicker.chooseFile(
+                        title: "Locate \(option.displayName)",
+                        extensions: ["app"]
+                    ) {
+                        viewModel.locateEmulator(type, at: url)
+                    }
+                }
+                .controlSize(.small)
+            }
+        }
+        .padding(.vertical, 2)
     }
 }
 

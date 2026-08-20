@@ -26,6 +26,11 @@ struct ContentView: View {
                     generationPlan: generationPlan,
                     search: $search
                 )
+                if viewModel.shouldShowNoCompatibleEmulatorsBanner {
+                    MissingEmulatorsBanner(viewModel: viewModel)
+                        .padding(.horizontal, 14)
+                        .padding(.top, 8)
+                }
                 GenerateDock(viewModel: viewModel, generationPlan: generationPlan)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
@@ -314,7 +319,7 @@ private struct InlineEmulatorPicker: View {
                 if opensProperties {
                     viewModel.propertiesGameID = game.id
                 } else {
-                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                    viewModel.openEmulatorSettings(for: game.platform)
                 }
             } label: {
                 Label(
@@ -396,6 +401,54 @@ private struct InlineEmulatorPicker: View {
         return choice
     }
 
+}
+
+// MARK: - Missing emulator guidance
+
+private struct MissingEmulatorsBanner: View {
+    @ObservedObject var viewModel: MainViewModel
+
+    private var platformNames: String {
+        let names = viewModel.platformsNeedingEmulators.map(\.displayName)
+        if names.count <= 3 { return ListFormatter.localizedString(byJoining: names) }
+        return ListFormatter.localizedString(byJoining: Array(names.prefix(3)))
+            + " and \(names.count - 3) more"
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "gamecontroller.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.orange)
+                .frame(width: 36, height: 36)
+                .background(Color.orange.opacity(0.13), in: Circle())
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("No compatible emulators found")
+                    .font(.headline)
+                Text("Games were found for \(platformNames), but no installed emulator can run them.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 12)
+
+            Button("Check Again") {
+                viewModel.refreshEmulators()
+            }
+            .buttonStyle(.glass)
+
+            Button("Set Up Emulators") {
+                viewModel.openEmulatorSettings()
+            }
+            .buttonStyle(.glassProminent)
+            .tint(.accentColor)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .accessibilityElement(children: .contain)
+    }
 }
 
 // MARK: - Generation dock (bottom)
@@ -618,7 +671,7 @@ private struct FirstFolderPrompt: View {
             VStack(spacing: 7) {
                 Text("Add Your ROM Folder")
                     .font(.title2.bold())
-                Text("Rom Shortcut Maker watches one or more folders and keeps them together in a single app library.")
+                Text("Choose your ROM folder. Rom Shortcut Maker will scan your games and look for compatible emulators automatically.")
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 350)

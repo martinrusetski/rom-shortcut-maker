@@ -14,6 +14,10 @@ import AppKit
 @MainActor
 final class MainViewModel: ObservableObject {
 
+    enum SettingsPane: Hashable {
+        case general, emulators, artwork
+    }
+
     /// A per-game field that can be individually overridden (and reset). Backs
     /// the Properties window's override dots and per-field reset buttons.
     enum OverrideField: CaseIterable {
@@ -50,6 +54,8 @@ final class MainViewModel: ObservableObject {
     @Published var lastConversionDate: Date?
     @Published var errorMessage: String?
     @Published var showingWatchedFolderPrompt: Bool = false
+    @Published var settingsPane: SettingsPane = .general
+    @Published var emulatorSettingsPlatformID: String?
 
     /// Rows the user has selected in the list (drives context-menu / ⌘I / the
     /// Properties window). Distinct from `GameEntry.isSelected`, which is the
@@ -195,6 +201,21 @@ final class MainViewModel: ObservableObject {
     /// in the status line so a problem is noticeable without opening anything.
     var needsAttentionCount: Int {
         games.filter { $0.status != .ready }.count
+    }
+
+    var platformsNeedingEmulators: [Platform] {
+        var seen: Set<String> = []
+        return games.compactMap { game in
+            guard game.status == .noEmulator, seen.insert(game.platform.id).inserted else {
+                return nil
+            }
+            return game.platform
+        }
+        .sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
+    }
+
+    var shouldShowNoCompatibleEmulatorsBanner: Bool {
+        !platformsNeedingEmulators.isEmpty && !games.contains { $0.status == .ready }
     }
 
     // MARK: - Scanning
@@ -614,6 +635,54 @@ final class MainViewModel: ObservableObject {
 
     func availableOptions(for platform: Platform) -> [EmulatorOption] {
         emulatorConfig.availableOptions(for: platform)
+    }
+
+    func supportedOptions(for platform: Platform) -> [EmulatorOption] {
+        emulatorConfig.supportedOptions(for: platform)
+    }
+
+    var libraryPlatforms: [Platform] {
+        var seen: Set<String> = []
+        return games.compactMap { game in
+            guard game.platform.id != "unknown", seen.insert(game.platform.id).inserted else {
+                return nil
+            }
+            return game.platform
+        }
+        .sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
+    }
+
+    func openEmulatorSettings(for platform: Platform? = nil) {
+        emulatorSettingsPlatformID = platform?.id
+        settingsPane = .emulators
+        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+    }
+
+    func locateEmulator(_ type: EmulatorType, at url: URL) {
+        emulatorConfig.setPath(url.standardizedFileURL.path, for: type)
+        refreshEmulators()
+    }
+
+    func refreshEmulators() {
+        emulatorConfig.refreshDetection()
+        for index in games.indices {
+            let game = games[index]
+            let overrideChoice = config.gameOverrides[game.stableKey]?.emulator
+            let choice = overrideChoice ?? emulatorConfig.defaultChoice(
+                for: game.platform,
+                romExtension: game.launchPath.pathExtension
+            )
+            if let choice,
+               emulatorConfig.availableOptions(
+                   for: game.platform,
+                   romExtension: game.launchPath.pathExtension
+               ).contains(where: { $0.choice == choice }) {
+                assignEmulator(&games[index], choice: choice)
+            } else {
+                clearEmulator(&games[index])
+            }
+        }
+        generationRevision += 1
     }
 
     func defaultChoiceSetting(for platform: Platform) -> EmulatorChoice? {

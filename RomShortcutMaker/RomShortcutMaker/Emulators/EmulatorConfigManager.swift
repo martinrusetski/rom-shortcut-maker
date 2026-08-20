@@ -182,6 +182,13 @@ final class EmulatorConfigManager {
         availableOptions(for: platform).filter { $0.supports(extension: romExtension) }
     }
 
+    /// Every curated standalone option for a platform, including emulators that
+    /// are not currently installed. RetroArch cores are discovered dynamically
+    /// and therefore only appear in `availableOptions(for:)` once installed.
+    func supportedOptions(for platform: Platform) -> [EmulatorOption] {
+        database.emulatorOptions(for: platform)
+    }
+
     /// The choice to assign automatically: the per-platform default if set and
     /// still available, otherwise the first available option.
     func defaultChoice(for platform: Platform) -> EmulatorChoice? {

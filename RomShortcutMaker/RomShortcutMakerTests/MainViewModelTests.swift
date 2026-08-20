@@ -198,15 +198,15 @@ final class MainViewModelTests: XCTestCase {
         store: RomConfigStore = InMemoryRomConfigStore(),
         provider: ArtworkProvider? = nil,
         generator: GameBundleGenerating? = nil,
-        scanner: FakeROMScanner? = nil
+        scanner: FakeROMScanner? = nil,
+        installedAppNames: [String] = ["Snes9x.app", "RetroArch.app"]
     ) -> MainViewModel {
         let database = try! SystemDatabase()
         let fs = FakeAppDiscovering()
         let appsDir = URL(fileURLWithPath: "/FakeApps")
-        fs.appsByDir[appsDir.path] = [
-            appsDir.appendingPathComponent("Snes9x.app"),
-            appsDir.appendingPathComponent("RetroArch.app")
-        ]
+        fs.appsByDir[appsDir.path] = installedAppNames.map {
+            appsDir.appendingPathComponent($0)
+        }
         let detector = EmulatorDetector(
             database: database, fs: fs,
             appSearchDirectories: [appsDir], binSearchDirectories: [],
@@ -337,6 +337,33 @@ final class MainViewModelTests: XCTestCase {
         await vm.scan()
         XCTAssertEqual(vm.games.first?.emulator, .standalone(.snes9x))
         XCTAssertNotNil(vm.games.first?.emulatorPath)
+    }
+
+    func testScanWithoutEmulatorsShowsSetupStateForAffectedPlatform() async {
+        let vm = makeViewModel(
+            roms: [snesROM("/ROMs/SNES/Zelda.sfc")],
+            installedAppNames: []
+        )
+
+        await vm.scan()
+
+        XCTAssertTrue(vm.shouldShowNoCompatibleEmulatorsBanner)
+        XCTAssertEqual(vm.platformsNeedingEmulators.map(\.id), ["snes"])
+        XCTAssertNil(vm.games.first?.emulator)
+    }
+
+    func testLocatingEmulatorRefreshesGamesAndClearsSetupState() async {
+        let vm = makeViewModel(
+            roms: [snesROM("/ROMs/SNES/Zelda.sfc")],
+            installedAppNames: []
+        )
+        await vm.scan()
+
+        vm.locateEmulator(.snes9x, at: URL(fileURLWithPath: "/Applications/Snes9x.app"))
+
+        XCTAssertEqual(vm.games.first?.emulator, .standalone(.snes9x))
+        XCTAssertEqual(vm.games.first?.emulatorPath?.path, "/Applications/Snes9x.app")
+        XCTAssertFalse(vm.shouldShowNoCompatibleEmulatorsBanner)
     }
 
     // MARK: - Overrides persist

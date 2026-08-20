@@ -93,6 +93,18 @@ final class EmulatorConfigManagerTests: XCTestCase {
 
     // MARK: - Availability
 
+    func testSupportedOptionsIncludesMissingCuratedEmulators() {
+        let manager = EmulatorConfigManager(
+            database: database, detector: makeEmptyDetector(),
+            store: InMemoryEmulatorConfigStore()
+        )
+
+        let choices = manager.supportedOptions(for: snes).map(\.choice)
+
+        XCTAssertTrue(choices.contains(.standalone(.snes9x)))
+        XCTAssertTrue(manager.availableOptions(for: snes).isEmpty)
+    }
+
     func testAvailableOptionsIncludesStandaloneAndInstalledCoreExcludesAbsent() {
         let manager = EmulatorConfigManager(
             database: database, detector: makeStandardDetector(),
