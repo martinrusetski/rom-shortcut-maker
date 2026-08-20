@@ -35,6 +35,7 @@ struct EmulatorOption: Equatable, Hashable {
     let launchArgumentsByExtension: [String: [String]]
     let supportedExtensions: Set<String>?
     let supportsZIP: Bool
+    let supportsM3U: Bool
 
     init(
         choice: EmulatorChoice,
@@ -42,7 +43,8 @@ struct EmulatorOption: Equatable, Hashable {
         launchArguments: [String],
         launchArgumentsByExtension: [String: [String]] = [:],
         supportedExtensions: Set<String>? = nil,
-        supportsZIP: Bool = false
+        supportsZIP: Bool = false,
+        supportsM3U: Bool = false
     ) {
         self.choice = choice
         self.displayName = displayName
@@ -50,6 +52,7 @@ struct EmulatorOption: Equatable, Hashable {
         self.launchArgumentsByExtension = launchArgumentsByExtension
         self.supportedExtensions = supportedExtensions
         self.supportsZIP = supportsZIP
+        self.supportsM3U = supportsM3U
     }
 
     /// An omitted rule means the database has no format restriction for this
@@ -126,6 +129,7 @@ final class SystemDatabase {
         let launchArgumentsByExtension: [String: [String]]?
         let supportedExtensions: [String]?
         let supportsZip: Bool?
+        let supportsM3U: Bool?
     }
 
     private struct EmulatorRecord: Decodable {
@@ -306,7 +310,8 @@ final class SystemDatabase {
                         option.launchArgumentsByExtension
                     ),
                     supportedExtensions: normalizedSupportedExtensions(option.supportedExtensions),
-                    supportsZIP: option.supportsZip ?? false
+                    supportsZIP: option.supportsZip ?? false,
+                    supportsM3U: option.supportsM3U ?? false
                 )
             case "retroArchCore":
                 guard let core = option.core else { return nil }
@@ -317,7 +322,8 @@ final class SystemDatabase {
                         ?? emulatorDefaultArguments["RetroArch"]
                         ?? ["-L", "{corePath}", "{romPath}"],
                     supportedExtensions: normalizedSupportedExtensions(option.supportedExtensions),
-                    supportsZIP: option.supportsZip ?? false
+                    supportsZIP: option.supportsZip ?? false,
+                    supportsM3U: option.supportsM3U ?? false
                 )
             default:
                 return nil

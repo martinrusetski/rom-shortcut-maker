@@ -95,11 +95,13 @@
       "id": "gamecube",
       "displayName": "GameCube",
       "folderAliases": ["gamecube", "gc", "ngc", "nintendo gamecube"],
-      "romExtensions": [".iso", ".gcm", ".rvz", ".ciso", ".gcz"],
+      "romExtensions": [".iso", ".gcm", ".rvz", ".ciso", ".gcz", ".m3u"],
       "libretroSystems": ["gamecube"],
       "emulatorOptions": [
         { "type": "standalone", "emulator": "Dolphin",
-          "launchArguments": ["-b", "-e", "{romPath}"] }
+          "launchArguments": ["-b", "-e", "{romPath}"],
+          "supportedExtensions": [".iso", ".gcm", ".rvz", ".ciso", ".gcz", ".m3u"],
+          "supportsM3U": true }
       ]
     },
     {
@@ -123,7 +125,8 @@
       "emulatorOptions": [
         { "type": "standalone", "emulator": "DuckStation",
           "launchArguments": ["-batch", "-fullscreen", "{romPath}"],
-          "supportedExtensions": [".cue", ".chd", ".bin", ".m3u", ".pbp", ".ecm", ".ccd", ".mds"] }
+          "supportedExtensions": [".cue", ".chd", ".bin", ".m3u", ".pbp", ".ecm", ".ccd", ".mds"],
+          "supportsM3U": true }
       ]
     },
     {
@@ -136,11 +139,11 @@
       "emulatorOptions": [
         { "type": "standalone", "emulator": "PCSX2",
           "launchArguments": ["{romPath}", "-batch", "-fullscreen", "-nogui"],
-          "supportedExtensions": [".iso", ".chd", ".cso", ".bin", ".m3u", ".mds"] },
+          "supportedExtensions": [".iso", ".chd", ".cso", ".bin", ".mds"] },
         { "type": "standalone", "emulator": "ARMSX2",
-          "supportedExtensions": [".iso", ".chd", ".cso", ".bin", ".m3u", ".mds"] },
+          "supportedExtensions": [".iso", ".chd", ".cso", ".bin", ".mds"] },
         { "type": "standalone", "emulator": "Play!",
-          "supportedExtensions": [".iso", ".chd", ".cso", ".bin", ".m3u"] }
+          "supportedExtensions": [".iso", ".chd", ".cso", ".bin"] }
       ]
     },
     {
@@ -154,7 +157,7 @@
       "emulatorOptions": [
         { "type": "standalone", "emulator": "PPSSPP",
           "launchArguments": ["--fullscreen", "{romPath}"],
-          "supportedExtensions": [".iso", ".cso", ".chd", ".pbp", ".m3u"] }
+          "supportedExtensions": [".iso", ".cso", ".chd", ".pbp"] }
       ]
     },
     {
@@ -213,9 +216,10 @@
       "libretroSystems": ["sega_saturn"],
       "emulatorOptions": [
         { "type": "standalone", "emulator": "Ymir",
-          "supportedExtensions": [".cue", ".chd", ".m3u", ".ccd", ".mds"] },
+          "supportedExtensions": [".cue", ".chd", ".ccd", ".mds"] },
         { "type": "standalone", "emulator": "Mednafen",
-          "supportedExtensions": [".cue", ".chd", ".m3u", ".ccd", ".mds"] }
+          "supportedExtensions": [".cue", ".chd", ".m3u", ".ccd", ".mds"],
+          "supportsM3U": true }
       ]
     },
     {
@@ -228,7 +232,7 @@
       "emulatorOptions": [
         { "type": "standalone", "emulator": "Flycast",
           "launchArguments": ["-config", "window:fullscreen=yes", "{romPath}"],
-          "supportedExtensions": [".cdi", ".chd", ".gdi", ".cue", ".m3u", ".ccd"] },
+          "supportedExtensions": [".cdi", ".chd", ".gdi", ".cue", ".ccd"] },
         { "type": "standalone", "emulator": "Redream",
           "supportedExtensions": [".cdi", ".chd", ".gdi", ".cue"] }
       ]

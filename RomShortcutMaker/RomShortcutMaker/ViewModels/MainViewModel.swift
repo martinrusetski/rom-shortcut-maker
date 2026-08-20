@@ -320,40 +320,36 @@ final class MainViewModel: ObservableObject {
     }
 
     private func makeEntry(from rom: DiscoveredROM) -> GameEntry {
-        // A multi-disc game with no existing .m3u gets a generated playlist (in
-        // our app folder, absolute paths) as its launch target.
-        var romPath = rom.url
-        if !rom.discPaths.isEmpty {
-            if let playlist = try? playlistManager.playlistURL(forDiscs: rom.discPaths) {
-                romPath = playlist
-            }
-        }
-
         // The parser still runs for romMetadata, but a scanner-provided title
         // hint (e.g. a PS3 PARAM.SFO TITLE) beats the filename-derived title.
         let metadata = filenameParser.parse(filename: rom.url.lastPathComponent)
         let platform = rom.platform ?? Platform(id: "unknown", displayName: "Unknown")
         var entry = GameEntry(
             title: rom.titleHint ?? metadata.title,
-            romPath: romPath,
+            romPath: rom.url,
             romMetadata: metadata,
             platform: platform,
             source: .romScan,
             additionalFiles: rom.memberFiles,
             alternateImages: rom.alternateImages,
             discCount: rom.discCount,
+            multiDiscImages: rom.discPaths,
             dosPackage: rom.dosPackage
         )
         if platform.id != "unknown",
            entry.dosPackage?.blockingIssue == nil,
            entry.dosPackage?.requiresLaunchSelection != true,
-           let choice = emulatorConfig.defaultChoice(for: platform, romExtension: entry.launchPath.pathExtension) {
+           let choice = emulatorConfig.defaultChoice(
+               for: platform,
+               romExtension: entry.emulatorCompatibilityExtension
+           ) {
             assignEmulator(&entry, choice: choice)
         }
         return entry
     }
 
     private func assignEmulator(_ entry: inout GameEntry, choice: EmulatorChoice) {
+        configureMultiDiscLaunch(&entry, choice: choice)
         entry.emulator = choice
         if let resolved = emulatorConfig.resolve(
             choice,
@@ -369,6 +365,20 @@ final class MainViewModel: ObservableObject {
                 platform: entry.platform,
                 romExtension: entry.launchPath.pathExtension
             )
+        }
+    }
+
+    private func configureMultiDiscLaunch(_ entry: inout GameEntry, choice: EmulatorChoice) {
+        guard !entry.multiDiscImages.isEmpty else { return }
+        guard emulatorConfig.supportsM3U(choice, for: entry.platform) else {
+            entry.launchImage = nil
+            return
+        }
+        do {
+            entry.launchImage = try playlistManager.playlistURL(forDiscs: entry.multiDiscImages)
+        } catch {
+            entry.launchImage = nil
+            Logger.shared.error("Failed to create multi-disc playlist", error: error)
         }
     }
 
@@ -395,7 +405,7 @@ final class MainViewModel: ObservableObject {
                 games[index].platform = platform
                 if let choice = emulatorConfig.defaultChoice(
                     for: platform,
-                    romExtension: games[index].launchPath.pathExtension
+                    romExtension: games[index].emulatorCompatibilityExtension
                 ) {
                     assignEmulator(&games[index], choice: choice)
                 } else {
@@ -590,7 +600,10 @@ final class MainViewModel: ObservableObject {
     }
 
     func availableOptions(for game: GameEntry) -> [EmulatorOption] {
-        emulatorConfig.availableOptions(for: game.platform, romExtension: game.launchPath.pathExtension)
+        emulatorConfig.availableOptions(
+            for: game.platform,
+            romExtension: game.emulatorCompatibilityExtension
+        )
     }
 
     // MARK: - Per-platform default
@@ -632,12 +645,12 @@ final class MainViewModel: ObservableObject {
             let overrideChoice = config.gameOverrides[game.stableKey]?.emulator
             let choice = overrideChoice ?? emulatorConfig.defaultChoice(
                 for: game.platform,
-                romExtension: game.launchPath.pathExtension
+                romExtension: game.emulatorCompatibilityExtension
             )
             if let choice,
                emulatorConfig.availableOptions(
                    for: game.platform,
-                   romExtension: game.launchPath.pathExtension
+                   romExtension: game.emulatorCompatibilityExtension
                ).contains(where: { $0.choice == choice }) {
                 assignEmulator(&games[index], choice: choice)
             } else {
@@ -1059,7 +1072,7 @@ final class MainViewModel: ObservableObject {
                 // Re-resolve the default emulator for the restored platform.
                 if let choice = self.emulatorConfig.defaultChoice(
                     for: entry.platform,
-                    romExtension: entry.launchPath.pathExtension
+                    romExtension: entry.emulatorCompatibilityExtension
                 ) {
                     self.assignEmulator(&entry, choice: choice)
                 } else {
@@ -1068,7 +1081,7 @@ final class MainViewModel: ObservableObject {
             case .emulator:
                 if let choice = self.emulatorConfig.defaultChoice(
                     for: entry.platform,
-                    romExtension: entry.launchPath.pathExtension
+                    romExtension: entry.emulatorCompatibilityExtension
                 ) {
                     self.assignEmulator(&entry, choice: choice)
                 } else {
@@ -1092,7 +1105,7 @@ final class MainViewModel: ObservableObject {
                     self.clearEmulator(&entry)
                 } else if let choice = self.emulatorConfig.defaultChoice(
                     for: entry.platform,
-                    romExtension: entry.launchPath.pathExtension
+                    romExtension: entry.emulatorCompatibilityExtension
                 ) {
                     self.assignEmulator(&entry, choice: choice)
                 }
@@ -1381,7 +1394,7 @@ final class MainViewModel: ObservableObject {
             games[index].platform = platform
             if let choice = emulatorConfig.defaultChoice(
                 for: platform,
-                romExtension: games[index].launchPath.pathExtension
+                romExtension: games[index].emulatorCompatibilityExtension
             ) {
                 assignEmulator(&games[index], choice: choice)
             }
@@ -1394,6 +1407,7 @@ final class MainViewModel: ObservableObject {
     }
 
     private func clearEmulator(_ entry: inout GameEntry) {
+        if !entry.multiDiscImages.isEmpty { entry.launchImage = nil }
         entry.emulator = nil
         entry.emulatorPath = nil
         entry.launchArguments = []
@@ -1404,7 +1418,7 @@ final class MainViewModel: ObservableObject {
             $0.platform = platform
             if let choice = self.emulatorConfig.defaultChoice(
                 for: platform,
-                romExtension: $0.launchPath.pathExtension
+                romExtension: $0.emulatorCompatibilityExtension
             ) {
                 self.assignEmulator(&$0, choice: choice)
             } else {

@@ -167,7 +167,8 @@ final class EmulatorConfigManager {
                             platform: platform
                         ),
                         supportedExtensions: core.supportedExtensions,
-                        supportsZIP: database.supportsZIPLaunch(for: platform)
+                        supportsZIP: database.supportsZIPLaunch(for: platform),
+                        supportsM3U: core.supportedExtensions?.contains(".m3u") == true
                     ))
                 }
             }
@@ -207,6 +208,16 @@ final class EmulatorConfigManager {
             return configured
         }
         return available.first?.choice
+    }
+
+    /// Whether this installed/configured platform option can load an M3U as
+    /// content. Kept separate from generic extension filtering because a
+    /// playlist is a derived multi-disc launch strategy, not a ROM format that
+    /// every disc emulator can be assumed to understand.
+    func supportsM3U(_ choice: EmulatorChoice, for platform: Platform) -> Bool {
+        availableOptions(for: platform)
+            .first(where: { $0.choice == choice })?
+            .supportsM3U == true
     }
 
     // MARK: Resolution

@@ -122,6 +122,32 @@ final class SystemDatabaseTests: XCTestCase {
         XCTAssertFalse(play?.supports(extension: ".mds") == true)
     }
 
+    func testM3UCapabilityIsLimitedToVerifiedProfiles() {
+        func option(_ choice: EmulatorChoice, platformID: String, name: String) -> EmulatorOption? {
+            database.emulatorOptions(for: Platform(id: platformID, displayName: name))
+                .first { $0.choice == choice }
+        }
+
+        XCTAssertTrue(option(.standalone(.dolphin), platformID: "gamecube", name: "GameCube")?.supportsM3U == true)
+        XCTAssertTrue(option(.standalone(.duckstation), platformID: "ps1", name: "PS1")?.supportsM3U == true)
+        XCTAssertTrue(option(.standalone(.mednafen), platformID: "saturn", name: "Saturn")?.supportsM3U == true)
+
+        for candidate in [
+            option(.standalone(.pcsx2), platformID: "ps2", name: "PS2"),
+            option(.standalone(.ppsspp), platformID: "psp", name: "PSP"),
+            option(.standalone(.ymir), platformID: "saturn", name: "Saturn"),
+            option(.standalone(.flycast), platformID: "dreamcast", name: "Dreamcast")
+        ] {
+            XCTAssertFalse(candidate?.supportsM3U == true)
+            XCTAssertFalse(candidate?.supports(extension: ".m3u") == true)
+        }
+
+        XCTAssertEqual(
+            Set(database.platforms(forExtension: ".m3u").map(\.id)),
+            ["gamecube", "ps1", "ps2", "psp", "saturn", "dreamcast"]
+        )
+    }
+
     func testZIPCompatibilityIsExplicitPerEmulator() {
         let snesOptions = database.emulatorOptions(for: Platform(id: "snes", displayName: "SNES"))
         let snes9x = snesOptions.first { $0.choice == .standalone(.snes9x) }

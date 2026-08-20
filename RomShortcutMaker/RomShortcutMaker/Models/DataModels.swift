@@ -604,13 +604,17 @@ struct GameEntry: Identifiable, Codable, Equatable {
     var artworkStatus: ArtworkStatus
     var source: GameSource
 
-    /// Track / disc member files referenced by `romPath` (a .cue's tracks, an
-    /// .m3u's discs). Hashed for change detection; not launched directly.
+    /// Track / disc member files belonging to this game (a .cue's tracks or a
+    /// multi-disc set). Hashed for change detection; not launched directly.
     var additionalFiles: [URL]
-    /// Number of discs when `romPath` is a multi-disc playlist, else nil. This
-    /// is the *disc* count, distinct from `additionalFiles.count`, which also
-    /// includes per-disc track files.
+    /// Number of discs for an existing or generated multi-disc playlist, else
+    /// nil. This is distinct from `additionalFiles.count`, which can also
+    /// include per-disc track files.
     var discCount: Int?
+    /// Ordered images belonging to a scanner-detected multi-disc set. The
+    /// primary `romPath` remains the stable game identity; a generated M3U may
+    /// become `launchImage` when the selected emulator supports playlists.
+    var multiDiscImages: [URL]
     /// Other launchable images of the same disc (e.g. a .chd alongside a .cue)
     /// the user can switch to.
     var alternateImages: [URL]
@@ -626,6 +630,12 @@ struct GameEntry: Identifiable, Codable, Equatable {
     /// The path actually launched: the chosen image, else the primary rom path.
     var launchPath: URL {
         dosPackage?.selectedLaunchURL ?? launchImage ?? romPath
+    }
+
+    /// File format used to choose an emulator. Generated playlists are a launch
+    /// detail, so compatibility follows the underlying disc image instead.
+    var emulatorCompatibilityExtension: String {
+        multiDiscImages.first?.pathExtension ?? launchPath.pathExtension
     }
 
     /// At-a-glance readiness, derived purely from the entry (no I/O, no database
@@ -665,6 +675,7 @@ struct GameEntry: Identifiable, Codable, Equatable {
         alternateImages: [URL] = [],
         launchImage: URL? = nil,
         discCount: Int? = nil,
+        multiDiscImages: [URL] = [],
         dosPackage: DOSPackageInfo? = nil
     ) {
         self.id = id
@@ -682,6 +693,7 @@ struct GameEntry: Identifiable, Codable, Equatable {
         self.alternateImages = alternateImages
         self.launchImage = launchImage
         self.discCount = discCount
+        self.multiDiscImages = multiDiscImages
         self.dosPackage = dosPackage
     }
 }

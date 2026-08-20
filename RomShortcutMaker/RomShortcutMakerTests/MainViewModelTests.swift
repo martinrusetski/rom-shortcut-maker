@@ -228,14 +228,18 @@ final class MainViewModelTests: XCTestCase {
         return viewModel
     }
 
-    private func multiDiscROM(discs: [String]) -> DiscoveredROM {
+    private func multiDiscROM(
+        discs: [String],
+        platform: Platform = Platform(id: "ps1", displayName: "PS1"),
+        emulator: EmulatorType = .duckstation
+    ) -> DiscoveredROM {
         let urls = discs.map { URL(fileURLWithPath: $0) }
         return DiscoveredROM(
             url: urls[0],
             fileSize: 10,
-            romExtension: ".chd",
-            platform: Platform(id: "ps1", displayName: "PS1"),
-            candidateEmulators: [.duckstation],
+            romExtension: "." + urls[0].pathExtension.lowercased(),
+            platform: platform,
+            candidateEmulators: [emulator],
             platformAmbiguous: false,
             memberFiles: urls,
             alternateImages: [],
@@ -538,16 +542,59 @@ final class MainViewModelTests: XCTestCase {
 
     // MARK: - Multi-disc
 
-    func testMultiDiscScanGeneratesPlaylist() async {
+    func testMultiDiscScanGeneratesPlaylistForSupportedEmulator() async throws {
         let vm = makeViewModel(roms: [multiDiscROM(discs: [
             "/ROMs/PSX/FF7/FF7 (Disc 1).chd",
             "/ROMs/PSX/FF7/FF7 (Disc 2).chd",
             "/ROMs/PSX/FF7/FF7 (Disc 3).chd"
-        ])])
+        ])], installedAppNames: ["DuckStation.app"])
         await vm.scan()
         XCTAssertEqual(vm.games.count, 1)
-        XCTAssertEqual(vm.games[0].romPath.pathExtension, "m3u", "multi-disc game launches via a generated playlist")
+        XCTAssertEqual(vm.games[0].romPath.pathExtension, "chd", "the primary disc remains the stable game identity")
+        XCTAssertEqual(vm.games[0].launchPath.pathExtension, "m3u", "DuckStation launches the generated playlist")
+        XCTAssertEqual(vm.games[0].emulator, .standalone(.duckstation))
         XCTAssertEqual(vm.games[0].additionalFiles.count, 3)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: vm.games[0].launchPath.path))
+    }
+
+    func testMultiDiscScanKeepsPrimaryDiscForUnsupportedEmulator() async {
+        let psp = Platform(id: "psp", displayName: "PSP")
+        let vm = makeViewModel(roms: [multiDiscROM(
+            discs: [
+                "/ROMs/PSP/Game/Game (Disc 1).chd",
+                "/ROMs/PSP/Game/Game (Disc 2).chd"
+            ],
+            platform: psp,
+            emulator: .ppsspp
+        )], installedAppNames: ["PPSSPP.app"])
+
+        await vm.scan()
+
+        XCTAssertEqual(vm.games[0].emulator, .standalone(.ppsspp))
+        XCTAssertEqual(vm.games[0].launchPath.pathExtension, "chd")
+        XCTAssertEqual(vm.games[0].romPath, vm.games[0].launchPath)
+    }
+
+    func testChangingEmulatorTogglesGeneratedPlaylistByCapability() async {
+        let saturn = Platform(id: "saturn", displayName: "Saturn")
+        let vm = makeViewModel(roms: [multiDiscROM(
+            discs: [
+                "/ROMs/Saturn/Panzer/Panzer (Disc 1).cue",
+                "/ROMs/Saturn/Panzer/Panzer (Disc 2).cue"
+            ],
+            platform: saturn,
+            emulator: .ymir
+        )], installedAppNames: ["Ymir.app", "Mednafen.app"])
+        vm.setDefaultChoice(.standalone(.ymir), for: saturn)
+        await vm.scan()
+
+        XCTAssertEqual(vm.games[0].launchPath.pathExtension, "cue")
+
+        vm.setEmulatorChoice(.standalone(.mednafen), for: vm.games[0])
+        XCTAssertEqual(vm.games[0].launchPath.pathExtension, "m3u")
+
+        vm.setEmulatorChoice(.standalone(.ymir), for: vm.games[0])
+        XCTAssertEqual(vm.games[0].launchPath.pathExtension, "cue")
     }
 
     // MARK: - Reset (un-skipped, hermetic)
