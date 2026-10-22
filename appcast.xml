@@ -7,14 +7,6 @@
     <language>en</language>
     <!-- BEGIN ITEMS -->
     <item>
-      <title>0.2.0</title>
-      <pubDate>Thu, 22 Oct 2026 17:54:23 +0000</pubDate>
-      <sparkle:version>4</sparkle:version>
-      <sparkle:shortVersionString>0.2.0</sparkle:shortVersionString>
-      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-      <enclosure url="https://github.com/martinrusetski/rom-shortcut-maker/releases/download/v0.2.0/RomShortcutMaker-v0.2.0.dmg" sparkle:edSignature="FXvpoALiBHNyK0OJM6rJYw2pT5FxK9RPSrEZ0HclVkxCn8Iwn94l549ZFEzEQfDGGsjkLrjZCOsTvtXHkWmmDg==" length="4034277" type="application/octet-stream" />
-    </item>
-    <item>
       <title>0.1.0</title>
       <pubDate>Thu, 20 Aug 2026 13:48:27 +0000</pubDate>
       <sparkle:version>3</sparkle:version>

@@ -48,8 +48,17 @@ struct RomShortcutMakerApp: App {
         }
         .windowResizability(.contentSize)
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About Rom Shortcut Maker") {
+                    appDelegate.showAboutWindow()
+                }
+            }
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesView(updater: updaterViewModel.updater)
+            }
+            CommandGroup(replacing: .help) {
+                Link("Rom Shortcut Maker Help",
+                     destination: URL(string: "https://github.com/martinrusetski/rom-shortcut-maker#readme")!)
             }
             AppCommands(viewModel: viewModel)
         }
@@ -96,6 +105,12 @@ struct AppCommands: Commands {
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
+    private lazy var aboutWindowController = AboutWindowController()
+
+    func showAboutWindow() {
+        aboutWindowController.show()
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return true
     }

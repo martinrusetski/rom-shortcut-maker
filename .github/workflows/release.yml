@@ -226,13 +226,19 @@ jobs:
           # git read the commit message instead of the annotated tag message.
           # Re-fetch the tag object so we get the real notes we wrote on the tag.
           git fetch --force origin "refs/tags/${TAG}:refs/tags/${TAG}"
-          NOTES=$(git tag -l --format='%(contents:body)' "$TAG")
-          if [ -z "$NOTES" ]; then
-            NOTES="See [README](https://github.com/${{ github.repository }}/blob/main/README.md) for installation and usage instructions."
+          NOTES_FILE="${RUNNER_TEMP}/release-notes.md"
+          git tag -l --format='%(contents:body)' "$TAG" > "$NOTES_FILE"
+          if [ ! -s "$NOTES_FILE" ]; then
+            printf '%s\n' "See [README](https://github.com/${{ github.repository }}/blob/main/README.md) for installation and usage instructions." > "$NOTES_FILE"
           fi
-          gh release create "$TAG" \
-            --title "$TAG" \
-            --notes "$NOTES" \
-            "${BINARY_NAME}-${TAG}.dmg"
+          if gh release view "$TAG" --repo "${{ github.repository }}" > /dev/null 2>&1; then
+            gh release upload "$TAG" "${BINARY_NAME}-${TAG}.dmg" --clobber
+            gh release edit "$TAG" --title "$TAG" --notes-file "$NOTES_FILE"
+          else
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes-file "$NOTES_FILE" \
+              "${BINARY_NAME}-${TAG}.dmg"
+          fi
         env:
           GH_TOKEN: ${{ github.token }}
