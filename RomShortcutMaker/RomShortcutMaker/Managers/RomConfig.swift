@@ -184,8 +184,13 @@ final class DefaultRomConfigStore: RomConfigStore {
     }
 
     func loadGameState() async throws -> GameConversionState? {
-        guard let data = try? Data(contentsOf: stateURL) else { return nil }
-        return try? decoder().decode(GameConversionState.self, from: data)
+        let data: Data
+        do {
+            data = try Data(contentsOf: stateURL)
+        } catch CocoaError.fileReadNoSuchFile {
+            return nil
+        }
+        return try decoder().decode(GameConversionState.self, from: data)
     }
 
     func saveGameState(_ state: GameConversionState) async throws {

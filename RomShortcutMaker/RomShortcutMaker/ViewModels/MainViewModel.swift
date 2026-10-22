@@ -85,6 +85,7 @@ final class MainViewModel: ObservableObject {
     /// Ensures the async generation-plan task invalidates even when a mutation
     /// replaces artwork bytes at the same URL with the same file size.
     private var generationRevision = 0
+    private var completeScanFolders: Set<String>?
 
     /// Pre-override snapshot of each entry, captured right after a scan/import
     /// (default title, resolved platform, default emulator, default args). Used
@@ -185,7 +186,13 @@ final class MainViewModel: ObservableObject {
     // MARK: - Validation
 
     var canGenerate: Bool {
-        !outputDirectory.isEmpty && games.contains { $0.isSelected && $0.emulator != nil }
+        !outputDirectory.isEmpty && (games.contains { $0.isSelected && $0.emulator != nil }
+            || (removeOrphanedBundles && canCleanUpLibrary))
+    }
+
+    private var canCleanUpLibrary: Bool {
+        sourceMode == .scan && !watchedFolders.isEmpty
+            && completeScanFolders == Set(watchedFolders)
     }
 
     var platformCount: Int {
@@ -253,6 +260,7 @@ final class MainViewModel: ObservableObject {
 
     func scan() async {
         guard !isProcessing, !watchedFolders.isEmpty else { return }
+        completeScanFolders = nil
         isProcessing = true
         operation = .scanning
         progressValue = 0
@@ -270,6 +278,7 @@ final class MainViewModel: ObservableObject {
             var discovered: [DiscoveredROM] = []
             var discoveredPaths: Set<String> = []
             var unavailableCount = 0
+            var unavailableFolders: Set<String> = []
             var lastScanError: Error?
             let folderCount = Double(watchedFolders.count)
             for (index, folder) in watchedFolders.enumerated() {
@@ -286,6 +295,7 @@ final class MainViewModel: ObservableObject {
                     }
                 } catch {
                     unavailableCount += 1
+                    unavailableFolders.insert(folder)
                     lastScanError = error
                     progressValue = Double(index + 1) / folderCount
                 }
@@ -297,13 +307,23 @@ final class MainViewModel: ObservableObject {
                 throw ROMScanner.ScanError.directoryNotReadable(URL(fileURLWithPath: watchedFolders[0]))
             }
             emulatorConfig.refreshDetection()
-            games = discovered.map { makeEntry(from: $0) }
+            // Keep known entries from disconnected sources visible. They are
+            // not evidence of removal, even when other folders scan normally.
+            let retained = sourceMode == .scan ? games.filter { game in
+                !discoveredPaths.contains(game.romPath.standardizedFileURL.path)
+                    && unavailableFolders.contains { isPath(game.romPath.path, inside: $0) }
+            } : []
+            let retainedDefaults = defaultEntries.filter { key, _ in retained.contains { $0.stableKey == key } }
+            let retainedDetection = detectionByKey.filter { key, _ in retained.contains { $0.stableKey == key } }
+            games = discovered.map { makeEntry(from: $0) } + retained
             detectionByKey = Dictionary(uniqueKeysWithValues: zip(games, discovered).compactMap { game, rom in
                 guard let detection = rom.detection else { return nil }
                 return (game.stableKey, detection)
             })
+            detectionByKey.merge(retainedDetection) { current, _ in current }
             applyFolderPlatformRules(to: &games)
             captureDefaults()
+            defaultEntries.merge(retainedDefaults) { _, retained in retained }
             applyOverrides()
             applyCachedArtwork()
             seedArtworkHints(from: discovered)
@@ -311,6 +331,8 @@ final class MainViewModel: ObservableObject {
             progressMessage = "\(games.count) ROMs across \(platformCount) platforms"
             if unavailableCount > 0 {
                 progressMessage += " · \(unavailableCount) folder unavailable"
+            } else {
+                completeScanFolders = Set(watchedFolders)
             }
             persist()
         } catch {
@@ -460,6 +482,8 @@ final class MainViewModel: ObservableObject {
     // MARK: - VDF import
 
     func importFromVDF(url: URL) async {
+        guard !isProcessing else { return }
+        completeScanFolders = nil
         isProcessing = true
         operation = .importing
         progressMessage = "Importing from Steam"
@@ -1170,7 +1194,7 @@ final class MainViewModel: ObservableObject {
         var removed = 0
         var actions: [String: GenerationAction] = [:]
 
-        var pendingCount: Int { created + updated }
+        var pendingCount: Int { created + updated + removed }
         var selectedCount: Int { created + updated + upToDate + needsAttention }
         var isUpToDate: Bool { pendingCount == 0 && needsAttention == 0 && selectedCount > 0 }
 
@@ -1203,6 +1227,7 @@ final class MainViewModel: ObservableObject {
         hasher.combine(lastConversionDate)
         hasher.combine(removeOrphanedBundles)
         hasher.combine(generationRevision)
+        hasher.combine(canCleanUpLibrary)
         return hasher.finalize()
     }
 
@@ -1221,7 +1246,7 @@ final class MainViewModel: ObservableObject {
     ) -> GenerationPlan {
         let outputURL = outputDirectory.isEmpty ? nil : URL(fileURLWithPath: outputDirectory)
         let changes = incrementalManager.detectChanges(
-            currentGames: selected,
+            currentGames: games,
             previousState: previousState,
             outputDirectory: outputURL)
         var plan = GenerationPlan()
@@ -1252,7 +1277,7 @@ final class MainViewModel: ObservableObject {
                 break
             }
         }
-        if removeOrphanedBundles {
+        if removeOrphanedBundles && canCleanUpLibrary {
             plan.removed = changes.values.filter { $0.changeType == .removed }.count
         }
         return plan
@@ -1261,6 +1286,7 @@ final class MainViewModel: ObservableObject {
     // MARK: - Generation
 
     func generate(forceRebuild: Bool = false) async {
+        guard !isProcessing else { return }
         guard !outputDirectory.isEmpty else {
             errorMessage = "Select an output directory first."
             return
@@ -1273,32 +1299,43 @@ final class MainViewModel: ObservableObject {
         defer {
             isProcessing = false
             operation = .idle
+            generationRevision += 1
         }
 
         let outputURL = URL(fileURLWithPath: outputDirectory)
-        let selected = games.filter { $0.isSelected }
-        let previousState = try? await configStore.loadGameState()
+        let library = games
+        let selected = library.filter { $0.isSelected }
+        let previousState: GameConversionState?
+        do {
+            previousState = try await configStore.loadGameState()
+        } catch {
+            errorMessage = "Could not read the previous shortcuts. Nothing was changed: \(error.localizedDescription)"
+            return
+        }
+        let bundleNames = GameBundleDestination.names(
+            for: library, previousState: previousState, outputDirectory: outputURL)
         let changes = incrementalManager.detectChanges(
-            currentGames: selected,
+            currentGames: library,
             previousState: previousState,
-            outputDirectory: outputURL)
+            outputDirectory: outputURL,
+            bundleNames: bundleNames)
 
         var removed = 0
-        if let deleted = try? incrementalManager.cleanupOrphanedGameBundles(
-            changes: changes, removeOrphaned: removeOrphanedBundles) {
-            removed = deleted.count
-        }
+        let shouldCleanUp = removeOrphanedBundles && canCleanUpLibrary
 
         // Precompute unique bundle identifiers across the batch.
         let ids = DefaultAppBundleGenerator.bundleIdentifiers(
-            for: selected.map { (title: $0.title, stableKey: $0.stableKey) })
+            for: library.map { (title: $0.title, stableKey: $0.stableKey) })
         var idByKey: [String: String] = [:]
-        for (game, id) in zip(selected, ids) { idByKey[game.stableKey] = id }
+        for (game, id) in zip(library, ids) { idByKey[game.stableKey] = id }
 
         var created = 0, updated = 0, skipped = 0
         var errors: [ConversionError] = []
         var warnings: [ConversionWarning] = []
-        var records: [ConvertedGame] = []
+        // Preserve excluded, unavailable, and failed entries across runs.
+        var records = Dictionary((previousState?.convertedGames ?? []).map { ($0.stableKey, $0) },
+                                 uniquingKeysWith: { first, _ in first })
+        var superseded: [ConvertedGame] = []
 
         for (index, game) in selected.enumerated() {
             progressValue = Double(index + 1) / Double(selected.count)
@@ -1307,13 +1344,10 @@ final class MainViewModel: ObservableObject {
 
             if change.changeType == .unchanged && !forceRebuild {
                 skipped += 1
-                if let previous = previousState?.convertedGames.first(where: { $0.stableKey == game.stableKey }) {
-                    records.append(previous)
-                }
                 continue
             }
 
-            guard let choice = game.emulator,
+            guard game.status == .ready, let choice = game.emulator,
                   let resolved = emulatorConfig.resolve(
                       choice,
                       for: game.platform,
@@ -1325,13 +1359,8 @@ final class MainViewModel: ObservableObject {
                 continue
             }
 
-            if change.changeType == .modified, let oldPath = change.previousBundlePath,
-               FileManager.default.fileExists(atPath: oldPath) {
-                try? FileManager.default.removeItem(at: URL(fileURLWithPath: oldPath))
-            }
-
             let bundle = ResolvedGameBundle(
-                bundleName: DefaultAppBundleGenerator.sanitizedBundleName(game.title),
+                bundleName: bundleNames[game.stableKey]!,
                 bundleIdentifier: idByKey[game.stableKey] ?? "com.romshortcutmaker.game",
                 displayName: game.title,
                 executablePath: resolved.emulatorPath,
@@ -1340,21 +1369,57 @@ final class MainViewModel: ObservableObject {
                 corePath: resolved.corePath,
                 iconICNS: artworkCache.hasICNS(for: game.stableKey) ? artworkCache.icnsURL(for: game.stableKey) : nil,
                 iconOriginalPNG: artworkCache.hasOriginal(for: game.stableKey) ? artworkCache.originalURL(for: game.stableKey) : nil,
-                outputDirectory: outputURL
+                outputDirectory: outputURL,
+                stableKey: game.stableKey,
+                previousBundlePath: change.previousBundlePath
             )
 
             do {
                 let bundleURL = try await bundleGenerator.generateAppBundle(for: bundle)
                 if change.changeType == .new { created += 1 } else { updated += 1 }
-                records.append(incrementalManager.buildConvertedGame(for: game, bundlePath: bundleURL.path))
+                if let prior = records[game.stableKey],
+                   GameBundleDestination.pathKey(URL(fileURLWithPath: prior.bundlePath)) != GameBundleDestination.pathKey(bundleURL),
+                   GameBundleDestination.pathKey(URL(fileURLWithPath: prior.bundlePath).deletingLastPathComponent())
+                    == GameBundleDestination.pathKey(outputURL) {
+                    superseded.append(prior)
+                }
+                records[game.stableKey] = incrementalManager.buildConvertedGame(for: game, bundlePath: bundleURL.path)
             } catch {
                 errors.append(ConversionError(shortcutName: game.title, message: error.localizedDescription))
             }
         }
 
-        try? await configStore.saveGameState(GameConversionState(convertedGames: records))
-        lastConversionDate = Date()
-        persist()
+        do {
+            try await configStore.saveGameState(GameConversionState(convertedGames: Array(records.values)))
+            // Cleanup follows a successful batch and state write. Copying to a
+            // different output folder deliberately preserves the original apps.
+            if errors.isEmpty && warnings.isEmpty {
+                let activePaths = Set(records.values.filter { changes[$0.stableKey]?.changeType != .removed }
+                    .map { GameBundleDestination.pathKey(URL(fileURLWithPath: $0.bundlePath)) })
+                let cleanup = incrementalManager.cleanupOrphanedGameBundles(
+                    changes: changes, removeOrphaned: shouldCleanUp, protectedPaths: activePaths)
+                removed = cleanup.trashedPaths.count
+                errors.append(contentsOf: cleanup.errors)
+                for key in cleanup.removedKeys { records.removeValue(forKey: key) }
+                if !cleanup.removedKeys.isEmpty {
+                    try await configStore.saveGameState(GameConversionState(convertedGames: Array(records.values)))
+                }
+                let keptPaths = Set(records.values.map { GameBundleDestination.pathKey(URL(fileURLWithPath: $0.bundlePath)) })
+                for prior in superseded where !keptPaths.contains(GameBundleDestination.pathKey(URL(fileURLWithPath: prior.bundlePath))) {
+                    do {
+                        try incrementalManager.trashOwnedBundle(at: URL(fileURLWithPath: prior.bundlePath), stableKey: prior.stableKey)
+                    } catch {
+                        errors.append(ConversionError(shortcutName: prior.title,
+                            message: "The replacement is ready, but the previous shortcut could not be moved to Trash: \(error.localizedDescription)"))
+                    }
+                }
+            }
+            lastConversionDate = Date()
+            persist()
+        } catch {
+            errors.append(ConversionError(shortcutName: "Shortcut history",
+                message: "Could not save shortcut history: \(error.localizedDescription)"))
+        }
 
         conversionSummary = ConversionSummary(
             bundlesCreated: created, bundlesUpdated: updated,

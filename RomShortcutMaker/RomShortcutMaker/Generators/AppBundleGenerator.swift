@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import CryptoKit
 
 /// Implementation of AppBundleGenerator protocol
 class DefaultAppBundleGenerator: AppBundleGenerator {
@@ -188,43 +189,17 @@ class DefaultAppBundleGenerator: AppBundleGenerator {
     ) async throws {
         let plistURL = bundleURL.appendingPathComponent("Contents/Info.plist")
 
-        // Build Info.plist content
-        var plistContent = """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-        <plist version="1.0">
-        <dict>
-            <key>CFBundleIdentifier</key>
-            <string>\(bundleIdentifier)</string>
-            <key>CFBundleName</key>
-            <string>\(bundleName)</string>
-            <key>CFBundleDisplayName</key>
-            <string>\(displayName)</string>
-            <key>CFBundleVersion</key>
-            <string>\(version)</string>
-            <key>CFBundlePackageType</key>
-            <string>APPL</string>
-            <key>CFBundleExecutable</key>
-            <string>launch.sh</string>
-        """
-
-        // Add icon reference if available
-        if hasIcon {
-            plistContent += """
-            
-                <key>CFBundleIconFile</key>
-                <string>AppIcon</string>
-            """
-        }
-        
-        plistContent += """
-        
-        </dict>
-        </plist>
-        """
-        
-        // Write plist to file
-        try plistContent.write(to: plistURL, atomically: true, encoding: .utf8)
+        var plist = [
+            "CFBundleIdentifier": bundleIdentifier,
+            "CFBundleName": bundleName,
+            "CFBundleDisplayName": displayName,
+            "CFBundleVersion": version,
+            "CFBundlePackageType": "APPL",
+            "CFBundleExecutable": "launch.sh"
+        ]
+        if hasIcon { plist["CFBundleIconFile"] = "AppIcon" }
+        let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+        try data.write(to: plistURL, options: .atomic)
     }
     
     /// Generate launch script for the app bundle
@@ -452,9 +427,13 @@ class DefaultAppBundleGenerator: AppBundleGenerator {
             throw AppBundleGeneratorError.directoryNotWritable(game.outputDirectory.path)
         }
 
+        let stagingDirectory = game.outputDirectory.appendingPathComponent(
+            ".rom-shortcut-maker-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: stagingDirectory, withIntermediateDirectories: false)
+        defer { try? fileManager.removeItem(at: stagingDirectory) }
         let bundleURL = try await createAppBundleStructure(
             bundleName: game.bundleName,
-            outputDirectory: game.outputDirectory
+            outputDirectory: stagingDirectory
         )
 
         try await generateInfoPlist(
@@ -506,8 +485,28 @@ class DefaultAppBundleGenerator: AppBundleGenerator {
             try installDefaultShortcutIcon(to: icnsDestination)
         }
 
+        let plistURL = bundleURL.appendingPathComponent("Contents/Info.plist")
+        var plist = try PropertyListSerialization.propertyList(
+            from: Data(contentsOf: plistURL), format: nil) as! [String: Any]
+        plist[GameBundleDestination.gameKey] = game.stableKey
+        try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+            .write(to: plistURL, options: .atomic)
+        guard fileManager.isExecutableFile(atPath: scriptURL.path),
+              (try Data(contentsOf: icnsDestination)).starts(with: Data("icns".utf8)) else {
+            throw AppBundleGeneratorError.invalidConfiguration("The staged launcher is incomplete.")
+        }
+        let destination = game.outputDirectory.appendingPathComponent(game.bundleName + ".app")
+        // Check existence without following symlinks (including broken links).
+        let exists = (try? fileManager.attributesOfItem(atPath: destination.path)) != nil
+        if exists && !GameBundleDestination.isOwned(
+            destination, by: game.stableKey, recordedPath: game.previousBundlePath) {
+            throw AppBundleGeneratorError.invalidConfiguration(
+                "Refusing to replace an app that does not belong to this game: \(destination.path)")
+        }
+        try Task.checkCancellation()
+        try GameBundleDestination.commit(staged: bundleURL, destination: destination, replacing: exists)
         logger.logBundleCreated(game.bundleName)
-        return bundleURL
+        return destination
     }
 
     private func installDefaultShortcutIcon(to destination: URL) throws {
@@ -632,6 +631,8 @@ struct ResolvedGameBundle {
     let iconICNS: URL?          // pre-converted .icns to copy
     let iconOriginalPNG: URL?   // original PNG to convert
     let outputDirectory: URL
+    let stableKey: String
+    let previousBundlePath: String?
 
     init(
         bundleName: String,
@@ -644,7 +645,9 @@ struct ResolvedGameBundle {
         corePath: URL? = nil,
         iconICNS: URL? = nil,
         iconOriginalPNG: URL? = nil,
-        outputDirectory: URL
+        outputDirectory: URL,
+        stableKey: String? = nil,
+        previousBundlePath: String? = nil
     ) {
         self.bundleName = bundleName
         self.bundleIdentifier = bundleIdentifier
@@ -657,6 +660,9 @@ struct ResolvedGameBundle {
         self.iconICNS = iconICNS
         self.iconOriginalPNG = iconOriginalPNG
         self.outputDirectory = outputDirectory
+        self.stableKey = stableKey ?? SHA256.hash(data: Data(romPath.standardizedFileURL.path.utf8))
+            .map { String(format: "%02x", $0) }.joined()
+        self.previousBundlePath = previousBundlePath
     }
 }
 

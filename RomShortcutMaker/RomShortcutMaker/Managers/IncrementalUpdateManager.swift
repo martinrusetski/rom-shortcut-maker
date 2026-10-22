@@ -68,6 +68,13 @@ struct GameConversionState: Equatable, Codable {
 class IncrementalUpdateManager {
 
     private let fileManager = FileManager.default
+    private let trashBundle: (URL) throws -> Void
+
+    init(trashBundle: @escaping (URL) throws -> Void = {
+        try FileManager.default.trashItem(at: $0, resultingItemURL: nil)
+    }) {
+        self.trashBundle = trashBundle
+    }
 
     // MARK: - Change Detection
     
@@ -289,9 +296,12 @@ class IncrementalUpdateManager {
     func detectChanges(
         currentGames: [GameEntry],
         previousState: GameConversionState?,
-        outputDirectory: URL?
+        outputDirectory: URL?,
+        bundleNames: [String: String]? = nil
     ) -> [String: GameChange] {
         var changes: [String: GameChange] = [:]
+        let names = bundleNames ?? GameBundleDestination.names(
+            for: currentGames, previousState: previousState, outputDirectory: outputDirectory)
 
         guard let previousState = previousState else {
             for entry in currentGames {
@@ -312,7 +322,7 @@ class IncrementalUpdateManager {
                 let signature = computeChangeSignature(for: entry)
                 let bundleExists = fileManager.fileExists(atPath: previous.bundlePath)
                 let expectedBundlePath = outputDirectory?
-                    .appendingPathComponent(DefaultAppBundleGenerator.sanitizedBundleName(entry.title))
+                    .appendingPathComponent(names[entry.stableKey] ?? DefaultAppBundleGenerator.sanitizedBundleName(entry.title))
                     .appendingPathExtension("app")
                     .standardizedFileURL.path
                 let previousBundlePath = URL(fileURLWithPath: previous.bundlePath)
@@ -399,21 +409,51 @@ class IncrementalUpdateManager {
         )
     }
 
-    /// Delete orphaned bundles for removed games.
+    struct GameCleanupResult {
+        var removedKeys: Set<String> = []
+        var trashedPaths: [String] = []
+        var errors: [ConversionError] = []
+    }
+
+    /// Move only owned, unreferenced launchers to Trash. Each failure remains
+    /// tracked so a failed cleanup cannot silently forget a launcher.
     func cleanupOrphanedGameBundles(
         changes: [String: GameChange],
-        removeOrphaned: Bool
-    ) throws -> [String] {
-        guard removeOrphaned else { return [] }
-        var deletedPaths: [String] = []
-        for (_, change) in changes where change.changeType == .removed {
+        removeOrphaned: Bool,
+        protectedPaths: Set<String> = []
+    ) -> GameCleanupResult {
+        var result = GameCleanupResult()
+        guard removeOrphaned else { return result }
+        for (key, change) in changes where change.changeType == .removed {
             guard let bundlePath = change.previousBundlePath else { continue }
-            if fileManager.fileExists(atPath: bundlePath) {
-                try fileManager.removeItem(at: URL(fileURLWithPath: bundlePath))
-                deletedPaths.append(bundlePath)
-                Logger.shared.logBundleDeleted(bundlePath)
+            let url = URL(fileURLWithPath: bundlePath)
+            if protectedPaths.contains(GameBundleDestination.pathKey(url)) { continue }
+            do {
+                if try trashOwnedBundle(at: url, stableKey: key) {
+                    result.trashedPaths.append(bundlePath)
+                }
+                result.removedKeys.insert(key)
+            } catch {
+                result.errors.append(ConversionError(shortcutName: url.deletingPathExtension().lastPathComponent,
+                    message: "Could not move the old shortcut to Trash: \(error.localizedDescription)"))
             }
         }
-        return deletedPaths
+        return result
+    }
+
+    @discardableResult
+    func trashOwnedBundle(at url: URL, stableKey: String) throws -> Bool {
+        do {
+            _ = try fileManager.attributesOfItem(atPath: url.path)
+        } catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile {
+            return false
+        }
+        guard GameBundleDestination.isOwned(url, by: stableKey, recordedPath: url.path) else {
+            throw AppBundleGeneratorError.invalidConfiguration(
+                "The existing app cannot be identified as this game's shortcut: \(url.path)")
+        }
+        try trashBundle(url)
+        Logger.shared.logBundleDeleted(url.path)
+        return true
     }
 }

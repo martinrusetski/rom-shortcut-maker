@@ -76,4 +76,15 @@ final class RomConfigMigrationTests: XCTestCase {
         // cleanup in updateOverride keeps it around.
         XCTAssertNotEqual(override, GameOverride())
     }
+
+    func testCorruptedGameHistoryThrowsInsteadOfStartingOver() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("CorruptHistory-\(UUID())")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try Data("invalid JSON".utf8).write(to: directory.appendingPathComponent("game_state.json"))
+        do {
+            _ = try await DefaultRomConfigStore(directory: directory).loadGameState()
+            XCTFail("Unreadable history must not silently become an empty history")
+        } catch {}
+    }
 }

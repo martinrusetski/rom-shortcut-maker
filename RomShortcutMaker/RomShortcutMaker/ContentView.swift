@@ -707,7 +707,7 @@ private struct ResultsSheet: View {
             Text("Generation finished with issues")
                 .font(.headline)
             Text("Created \(summary.bundlesCreated), updated \(summary.bundlesUpdated), skipped \(summary.bundlesSkipped)"
-                 + (summary.bundlesRemoved > 0 ? ", removed \(summary.bundlesRemoved)" : ""))
+                 + (summary.bundlesRemoved > 0 ? ", moved \(summary.bundlesRemoved) to Trash" : ""))
                 .foregroundColor(.secondary)
             Divider()
             ScrollView {

@@ -115,9 +115,9 @@ private struct GeneralPane: View {
             }
 
             Section {
-                Toggle("Remove orphaned bundles", isOn: $viewModel.removeOrphanedBundles)
+                Toggle("Move removed games’ shortcuts to Trash", isOn: $viewModel.removeOrphanedBundles)
                     .onChange(of: viewModel.removeOrphanedBundles) { _ in viewModel.saveSettings() }
-                Text("Delete generated app bundles for games no longer in your library.")
+                Text("After a complete scan and successful generation, move shortcuts for games no longer in your library to Trash. Unchecked games are kept.")
                     .font(.caption).foregroundColor(.secondary)
             }
             Section("Locations") {

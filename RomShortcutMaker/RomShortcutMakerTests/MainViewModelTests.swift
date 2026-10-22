@@ -72,11 +72,31 @@ final class MultipleArtworkProvider: ArtworkProvider {
 
 final class FakeGameBundleGenerator: GameBundleGenerating {
     private(set) var generatedCount = 0
+    var failingTitles: Set<String> = []
+    var delegate: GameBundleGenerating?
     func generateAppBundle(for game: ResolvedGameBundle) async throws -> URL {
         generatedCount += 1
+        if failingTitles.contains(game.displayName) { throw CocoaError(.fileWriteNoPermission) }
+        if let delegate { return try await delegate.generateAppBundle(for: game) }
         let url = game.outputDirectory.appendingPathComponent(game.bundleName + ".app")
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+}
+
+final class FailingGameStateStore: RomConfigStore {
+    let underlying = InMemoryRomConfigStore()
+    var failRead = false
+    var failWrite = false
+    func load() async throws -> AppConfigurationV2 { try await underlying.load() }
+    func save(_ config: AppConfigurationV2) async throws { try await underlying.save(config) }
+    func loadGameState() async throws -> GameConversionState? {
+        if failRead { throw CocoaError(.fileReadCorruptFile) }
+        return try await underlying.loadGameState()
+    }
+    func saveGameState(_ state: GameConversionState) async throws {
+        if failWrite { throw CocoaError(.fileWriteNoPermission) }
+        try await underlying.saveGameState(state)
     }
 }
 
@@ -199,6 +219,7 @@ final class MainViewModelTests: XCTestCase {
         provider: ArtworkProvider? = nil,
         generator: GameBundleGenerating? = nil,
         scanner: FakeROMScanner? = nil,
+        incrementalManager: IncrementalUpdateManager = IncrementalUpdateManager(),
         installedAppNames: [String] = ["Snes9x.app", "RetroArch.app"]
     ) -> MainViewModel {
         let database = try! SystemDatabase()
@@ -222,7 +243,8 @@ final class MainViewModelTests: XCTestCase {
             artworkProvider: provider,
             bundleGenerator: generator ?? FakeGameBundleGenerator(),
             vdfBridge: VDFToGameEntryBridge(database: database),
-            playlistManager: PlaylistManager(directory: tempDir.appendingPathComponent("playlists"))
+            playlistManager: PlaylistManager(directory: tempDir.appendingPathComponent("playlists")),
+            incrementalManager: incrementalManager
         )
         viewModel.watchedFolders = ["/ROMs"]
         return viewModel
@@ -915,6 +937,216 @@ final class MainViewModelTests: XCTestCase {
         let plan = await vm.generationPlan()
 
         XCTAssertEqual(plan.updated, 1)
+    }
+
+    // MARK: - Generation safety
+
+    private func cleanupManager() -> IncrementalUpdateManager {
+        let trash = tempDir.appendingPathComponent("test-trash")
+        return IncrementalUpdateManager(trashBundle: { url in
+            try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
+            try FileManager.default.moveItem(at: url, to: trash.appendingPathComponent(url.lastPathComponent))
+        })
+    }
+
+    func testFailedUpdatePreservesPreviousLauncherAndHistory() async throws {
+        let generator = FakeGameBundleGenerator()
+        let store = InMemoryRomConfigStore()
+        let vm = makeViewModel(roms: [snesROM("/ROMs/Zelda.sfc")], store: store, generator: generator)
+        await vm.scan()
+        vm.outputDirectory = tempDir.path
+        await vm.generate()
+        let loaded = try await store.loadGameState()
+        let before = try XCTUnwrap(loaded)
+        let oldApp = URL(fileURLWithPath: before.convertedGames[0].bundlePath)
+        let sentinel = oldApp.appendingPathComponent("working-launcher")
+        try Data("original".utf8).write(to: sentinel)
+        vm.setTitle("Renamed Zelda", for: vm.games[0])
+        generator.failingTitles = ["Renamed Zelda"]
+        await vm.generate()
+        let after = try await store.loadGameState()
+        XCTAssertEqual(after?.convertedGames, before.convertedGames)
+        XCTAssertEqual(try String(contentsOf: sentinel, encoding: .utf8), "original")
+        XCTAssertEqual(vm.conversionSummary?.errors.count, 1)
+    }
+
+    func testDuplicateTitlesGenerateDistinctAppsAndStayCurrent() async throws {
+        let store = InMemoryRomConfigStore()
+        let vm = makeViewModel(roms: [snesROM("/ROMs/USA/Zelda.sfc"), snesROM("/ROMs/Japan/Zelda.sfc")],
+            store: store, generator: DefaultAppBundleGenerator(), incrementalManager: cleanupManager())
+        await vm.scan()
+        vm.outputDirectory = tempDir.path
+        await vm.generate()
+        let loaded = try await store.loadGameState()
+        let state = try XCTUnwrap(loaded)
+        XCTAssertEqual(Set(state.convertedGames.map(\.bundlePath)).count, 2)
+        for record in state.convertedGames {
+            let game = try XCTUnwrap(vm.games.first { $0.stableKey == record.stableKey })
+            let script = try String(contentsOf: URL(fileURLWithPath: record.bundlePath).appendingPathComponent("Contents/MacOS/launch.sh"), encoding: .utf8)
+            XCTAssertTrue(script.contains(game.romPath.path))
+        }
+        let plan = await vm.generationPlan()
+        XCTAssertEqual(plan.upToDate, 2)
+        vm.removeOrphanedBundles = true
+        vm.setSelected(false, for: vm.games[0])
+        let excludedPlan = await vm.generationPlan()
+        XCTAssertEqual(excludedPlan.removed, 0)
+        XCTAssertEqual(excludedPlan.upToDate, 1)
+        await vm.generate()
+        let after = try await store.loadGameState()
+        XCTAssertEqual(after?.convertedGames.count, 2)
+        for record in state.convertedGames { XCTAssertTrue(FileManager.default.fileExists(atPath: record.bundlePath)) }
+        vm.setSelected(true, for: vm.games[0])
+        let reincluded = await vm.generationPlan()
+        XCTAssertEqual(reincluded.upToDate, 2)
+    }
+
+    func testPartialScanPreservesKnownGamesAndBlocksCleanupAfterRelaunch() async throws {
+        let scanner = FakeROMScanner([])
+        scanner.resultsByDirectory = ["/ROMs/One": [snesROM("/ROMs/One/Zelda.sfc")],
+                                      "/ROMs/Two": [snesROM("/ROMs/Two/Metroid.sfc")]]
+        let store = InMemoryRomConfigStore()
+        let vm = makeViewModel(roms: [], store: store, generator: DefaultAppBundleGenerator(),
+            scanner: scanner, incrementalManager: cleanupManager())
+        vm.watchedFolders = ["/ROMs/One", "/ROMs/Two"]
+        vm.outputDirectory = tempDir.path
+        await vm.scan()
+        await vm.generate()
+        let loaded = try await store.loadGameState()
+        let before = try XCTUnwrap(loaded)
+        scanner.failingDirectories = ["/ROMs/Two"]
+        vm.removeOrphanedBundles = true
+        await vm.scan()
+        XCTAssertEqual(vm.games.count, 2, "Known games from the disconnected folder stay visible")
+
+        let reopened = makeViewModel(roms: [], store: store, generator: DefaultAppBundleGenerator(),
+            scanner: scanner, incrementalManager: cleanupManager())
+        reopened.watchedFolders = vm.watchedFolders
+        reopened.outputDirectory = tempDir.path
+        reopened.removeOrphanedBundles = true
+        await reopened.scan()
+        XCTAssertEqual(reopened.games.count, 1)
+        let partialPlan = await reopened.generationPlan()
+        XCTAssertEqual(partialPlan.removed, 0)
+        await reopened.generate()
+        let partialState = try await store.loadGameState()
+        XCTAssertEqual(partialState?.convertedGames.count, 2)
+        for record in before.convertedGames { XCTAssertTrue(FileManager.default.fileExists(atPath: record.bundlePath)) }
+
+        scanner.failingDirectories = []
+        scanner.resultsByDirectory["/ROMs/Two"] = []
+        await reopened.scan()
+        let completePlan = await reopened.generationPlan()
+        XCTAssertEqual(completePlan.removed, 1)
+        await reopened.generate()
+        XCTAssertEqual(reopened.conversionSummary?.bundlesRemoved, 1)
+        let after = try await store.loadGameState()
+        XCTAssertEqual(after?.convertedGames.count, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent("test-trash/Metroid.app/Contents/MacOS/launch.sh").path))
+    }
+
+    func testCleanupCanRunAloneAndDisabledCleanupRetainsHistory() async throws {
+        let scanner = FakeROMScanner([snesROM("/ROMs/Zelda.sfc")])
+        let store = InMemoryRomConfigStore()
+        let vm = makeViewModel(roms: [], store: store, generator: DefaultAppBundleGenerator(),
+            scanner: scanner, incrementalManager: cleanupManager())
+        vm.outputDirectory = tempDir.path
+        await vm.scan()
+        await vm.generate()
+        scanner.result = []
+        await vm.scan()
+        await vm.generate()
+        let retained = try await store.loadGameState()
+        XCTAssertEqual(retained?.convertedGames.count, 1)
+        vm.removeOrphanedBundles = true
+        let plan = await vm.generationPlan()
+        XCTAssertEqual(plan.pendingCount, 1)
+        XCTAssertTrue(vm.canGenerate)
+        await vm.generate()
+        XCTAssertEqual(vm.conversionSummary?.bundlesRemoved, 1)
+        let after = try await store.loadGameState()
+        XCTAssertTrue(after?.convertedGames.isEmpty == true)
+    }
+
+    func testFailedBatchDoesNotCleanUpOtherLaunchers() async throws {
+        let scanner = FakeROMScanner([snesROM("/ROMs/Zelda.sfc"), snesROM("/ROMs/Metroid.sfc")])
+        let store = InMemoryRomConfigStore()
+        let generator = FakeGameBundleGenerator()
+        generator.delegate = DefaultAppBundleGenerator()
+        let vm = makeViewModel(roms: [], store: store, generator: generator,
+            scanner: scanner, incrementalManager: cleanupManager())
+        vm.outputDirectory = tempDir.path
+        await vm.scan()
+        await vm.generate()
+        scanner.result = [snesROM("/ROMs/Zelda.sfc")]
+        await vm.scan()
+        vm.setTitle("Updated Zelda", for: vm.games[0])
+        generator.failingTitles = ["Updated Zelda"]
+        vm.removeOrphanedBundles = true
+        await vm.generate()
+        XCTAssertEqual(vm.conversionSummary?.errors.count, 1)
+        XCTAssertEqual(vm.conversionSummary?.bundlesRemoved, 0)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent("Metroid.app").path))
+        let state = try await store.loadGameState()
+        XCTAssertEqual(state?.convertedGames.count, 2)
+    }
+
+    func testRenameTrashesOldLauncherOnlyAfterReplacementSucceeds() async throws {
+        let vm = makeViewModel(roms: [snesROM("/ROMs/Zelda.sfc")], generator: DefaultAppBundleGenerator(),
+            incrementalManager: cleanupManager())
+        vm.outputDirectory = tempDir.path
+        await vm.scan()
+        await vm.generate()
+        vm.setTitle("Renamed Zelda", for: vm.games[0])
+        await vm.generate()
+        XCTAssertTrue(vm.conversionSummary?.errors.isEmpty == true)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent("Renamed Zelda.app/Contents/MacOS/launch.sh").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent("Zelda.app").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent("test-trash/Zelda.app/Contents/MacOS/launch.sh").path))
+    }
+
+    func testChangingOutputFolderKeepsOriginalLaunchers() async throws {
+        let vm = makeViewModel(roms: [snesROM("/ROMs/Zelda.sfc")], generator: DefaultAppBundleGenerator(),
+            incrementalManager: cleanupManager())
+        vm.outputDirectory = tempDir.path
+        await vm.scan()
+        await vm.generate()
+        let second = tempDir.appendingPathComponent("Second")
+        try FileManager.default.createDirectory(at: second, withIntermediateDirectories: true)
+        vm.setOutputDirectory(second)
+        await vm.generate()
+        XCTAssertTrue(vm.conversionSummary?.errors.isEmpty == true)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent("Zelda.app/Contents/MacOS/launch.sh").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: second.appendingPathComponent("Zelda.app/Contents/MacOS/launch.sh").path))
+    }
+
+    func testStateWriteFailurePreventsOldLauncherRetirement() async throws {
+        let store = FailingGameStateStore()
+        let vm = makeViewModel(roms: [snesROM("/ROMs/Zelda.sfc")], store: store,
+            generator: DefaultAppBundleGenerator(), incrementalManager: cleanupManager())
+        vm.outputDirectory = tempDir.path
+        await vm.scan()
+        await vm.generate()
+        store.failWrite = true
+        vm.setTitle("Renamed Zelda", for: vm.games[0])
+        await vm.generate()
+        XCTAssertEqual(vm.conversionSummary?.errors.count, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent("Zelda.app").path))
+        let state = try await store.loadGameState()
+        XCTAssertEqual(state?.convertedGames[0].title, "Zelda")
+    }
+
+    func testUnreadableHistoryAbortsBeforeGeneration() async {
+        let store = FailingGameStateStore()
+        store.failRead = true
+        let generator = FakeGameBundleGenerator()
+        let vm = makeViewModel(roms: [snesROM("/ROMs/Zelda.sfc")], store: store, generator: generator)
+        vm.outputDirectory = tempDir.path
+        await vm.scan()
+        await vm.generate()
+        XCTAssertEqual(generator.generatedCount, 0)
+        XCTAssertNotNil(vm.errorMessage)
+        XCTAssertFalse(vm.isProcessing)
     }
 
     // MARK: - Scale

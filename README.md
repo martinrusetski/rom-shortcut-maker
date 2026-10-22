@@ -65,6 +65,10 @@ Then open the app normally. You can also use **System Settings > Privacy & Secur
 
 The app remembers your library settings and only recreates launchers whose ROM, emulator, arguments, output location, title, or artwork changed.
 
+Updates are built and checked before replacing an existing launcher. Games with matching titles receive distinct filenames. Choosing a different output folder creates copies and keeps the original launchers. Renaming a game within the same output folder moves the previous launcher to Trash after a successful replacement.
+
+The optional cleanup setting moves launchers to Trash only for games absent from a complete library scan, after a successful generation run. Unchecking a game keeps its existing launcher. Cleanup is skipped when a watched folder cannot be scanned or generation reports a problem.
+
 ## Special Library Formats
 
 - **DOS games** - place each game in its own subfolder inside a folder named `DOS`, `MS-DOS`, or `MSDOS`. Rom Shortcut Maker inspects the package and lets you choose the startup program when it cannot determine one safely.

@@ -129,10 +129,15 @@ final class ROMScanner: ROMScanning {
             }
         }
 
+        var enumerationError: Error?
         guard let enumerator = fileManager.enumerator(
             at: directory,
             includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey, .fileSizeKey],
-            options: [.skipsHiddenFiles]
+            options: [.skipsHiddenFiles],
+            errorHandler: { _, error in
+                enumerationError = error
+                return false
+            }
         ) else {
             throw ScanError.directoryNotReadable(directory)
         }
@@ -144,19 +149,19 @@ final class ROMScanner: ROMScanning {
         var candidates: [URL] = []
         var ps3GameRoots: [URL] = []
         for case let url as URL in enumerator {
-            let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey])
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey])
             if isInsideDOSRoot(url, dosRootPaths: dosRootPaths) {
-                if values?.isDirectory == true { enumerator.skipDescendants() }
+                if values.isDirectory == true { enumerator.skipDescendants() }
                 continue
             }
-            if values?.isDirectory == true {
+            if values.isDirectory == true {
                 if ps3GameLayout(at: url) != nil {
                     ps3GameRoots.append(url)
                     enumerator.skipDescendants()
                 }
                 continue
             }
-            guard values?.isRegularFile == true else { continue }
+            guard values.isRegularFile == true else { continue }
             let ext = normalizedExtension(of: url)
             if let dosPlatform,
                let package = dosPackageInspector.inspectLoosePackage(url) {
@@ -166,6 +171,7 @@ final class ROMScanner: ROMScanning {
             guard !ext.isEmpty, knownExtensions.contains(ext) else { continue }
             candidates.append(url)
         }
+        if let enumerationError { throw enumerationError }
 
         // Synthesized single-entry-point games; they bypass the sheet/playlist/
         // grouping machinery below.
